@@ -1503,6 +1503,7 @@ function renderStatus() {
   if (ENDPOINT_DOWN) {
     pill.style.color = STATUS.down.color;
     pillText.textContent = STATUS.down.text;
+    document.getElementById("ep-model").textContent = "zai-org/GLM-5.3";
     hero.textContent = "—";
     heroLabel.textContent = "no live reading";
     kvv.textContent = "—";
