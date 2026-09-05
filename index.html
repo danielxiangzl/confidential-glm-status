@@ -1,0 +1,1986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GLM-5.3 confidential inference — capacity</title>
+<meta name="description" content="Live capacity and performance for the GLM-5.3 confidential inference endpoint.">
+<style>
+  /* Palette: the dataviz reference instance. Categorical slots 1-2 and the
+     ordinal blue ramp were validated with scripts/validate_palette.js against
+     both surfaces (all checks pass). Status colors are the fixed set. */
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #7c8695;
+    --seq-1: #86b6ef;
+    --seq-2: #5598e7;
+    --seq-3: #2a78d6;
+    --seq-4: #1c5cab;
+    --seq-5: #104281;
+    /* The meter track is chrome, not data: it must read as *unfilled*. A
+       sequential-ramp blue here made an empty bar look like a full one. */
+    --track: #e1e0d9;
+    --deemph: #c3c2b7;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --success-text: #006300;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #98a1ad;
+      --seq-1: #cde2fb;
+      --seq-2: #9ec5f4;
+      --seq-3: #6da7ec;
+      --seq-4: #3987e5;
+      --seq-5: #184f95;
+      --track: #383835;
+      --deemph: #383835;
+      --success-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --seq-1: #cde2fb;
+    --seq-2: #9ec5f4;
+    --seq-3: #6da7ec;
+    --seq-4: #3987e5;
+    --seq-5: #184f95;
+    --track: #383835;
+    --deemph: #383835;
+    --success-text: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--plane);
+    color: var(--text-primary);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  /* ---------------------------------------------------------- header */
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: baseline; margin-bottom: 24px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin: 4px 0 0; }
+  .sub code { font-size: 12.5px; color: var(--text-primary); }
+  .spacer { flex: 1 1 auto; }
+
+  button, select {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 11px; cursor: pointer;
+  }
+  button:hover { background: color-mix(in srgb, var(--text-primary) 5%, var(--surface-1)); }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  button[aria-pressed="true"] { border-color: var(--text-primary); font-weight: 600; }
+
+  /* ----------------------------------------------------------- cards */
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 18px 14px;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: -0.005em; }
+  .card .note { color: var(--text-muted); font-size: 12px; margin: 3px 0 0; }
+  .grid { display: grid; gap: 14px; }
+
+  /* -------------------------------------------------------- headline */
+  .headline { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 28px; align-items: center; }
+  @media (max-width: 720px) { .headline { grid-template-columns: 1fr; gap: 18px; } }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600;
+    padding: 4px 10px 4px 8px; border-radius: 999px; border: 1px solid var(--border);
+  }
+  .status-pill .ico { width: 13px; height: 13px; flex: none; }
+  .hero { font-size: 60px; font-weight: 600; line-height: 1.02; letter-spacing: -0.03em; margin: 12px 0 2px; }
+  .hero-label { color: var(--text-secondary); font-size: 13px; }
+
+  .meter-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; }
+  .meter-row .k { font-size: 13px; color: var(--text-secondary); }
+  .meter-row .v { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .meter { height: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .meter > i { display: block; height: 100%; border-radius: 999px; transition: width .5s ease, background-color .5s ease; }
+  @media (prefers-reduced-motion: reduce) { .meter > i { transition: none; } }
+  .meter-foot { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+
+  /* ------------------------------------------------------- KPI tiles */
+  /* At the 1140px content width this lands the 8 tiles as a clean 4+4; a
+     narrower floor packed five or six into row one and orphaned the rest. */
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .tile { padding: 14px 15px 12px; }
+  .tile .label { color: var(--text-secondary); font-size: 12.5px; }
+  .tile .value { font-size: 27px; font-weight: 600; letter-spacing: -0.02em; margin-top: 3px; }
+  .tile .unit { font-size: 14px; font-weight: 500; color: var(--text-secondary); margin-left: 2px; }
+  .tile .sub2 { color: var(--text-muted); font-size: 11.5px; margin-top: 2px; }
+  .tile svg.spark { display: block; margin-top: 8px; }
+
+  /* ---------------------------------------------------------- charts */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 26px 0 14px; }
+  .toolbar .group { display: flex; gap: 4px; }
+  .toolbar .lbl { color: var(--text-secondary); font-size: 12.5px; margin-right: 2px; }
+
+  .charts { grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); }
+  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+  .chart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 9px; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+  .legend .item.dimmed { opacity: 0.4; }
+  .legend .item.active { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
+  .legend .key { width: 13px; height: 2px; border-radius: 1px; flex: none; }
+  .legend .key.rect { height: 9px; border-radius: 2px; }
+  .plot { position: relative; }
+  .plot svg { display: block; width: 100%; overflow: visible; }
+  .empty { color: var(--text-muted); font-size: 13px; padding: 28px 0; text-align: center; }
+
+  .tip {
+    position: absolute; z-index: 5; pointer-events: none; opacity: 0;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; min-width: 130px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .13); transition: opacity .1s;
+  }
+  .tip .when { color: var(--text-muted); font-size: 11px; margin-bottom: 5px; }
+  .tip .row { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+  .tip .row .key { width: 11px; height: 2px; border-radius: 1px; flex: none; }
+  .tip .row .n { color: var(--text-secondary); }
+  .tip .row .v { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+  /* A stack's total is the sum of the rows above it, not another series, so it
+     sits below a rule and carries no colour key. */
+  .tip .row.total { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--grid); }
+  .tip .row.total .n { color: var(--text-primary); }
+
+  table.tv { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  table.tv th, table.tv td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  table.tv th:first-child, table.tv td:first-child { text-align: left; }
+  table.tv th { color: var(--text-secondary); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+  .tv-scroll { max-height: 268px; overflow: auto; }
+
+  footer { margin-top: 34px; color: var(--text-muted); font-size: 12px; line-height: 1.65; }
+  footer a { color: var(--text-secondary); }
+  .stale { opacity: .55; transition: opacity .2s; }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <h1>GLM-5.3 &middot; confidential inference</h1>
+    <!-- No hostname here, hard-coded or filled in. The page identifies the
+         deployment by what it runs, never by where it runs. -->
+    <p class="sub"><span id="ep-model">zai-org/GLM-5.3</span> &middot; 8&times; NVIDIA H200 (TP=8)</p>
+  </div>
+  <div class="spacer"></div>
+  <button id="theme" type="button" title="Toggle light / dark">Dark</button>
+</header>
+
+<!-- ------------------------------------------------------- headline -->
+<section class="card headline" aria-labelledby="cap-h">
+  <div>
+    <h2 id="cap-h" class="vh">Current capacity</h2>
+    <span class="status-pill" id="pill">
+      <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>
+      <span id="pill-text">Connecting&hellip;</span>
+    </span>
+    <div class="hero" id="hero">&mdash;</div>
+    <div class="hero-label" id="hero-label">KV cache free</div>
+  </div>
+  <div>
+    <div class="meter-row">
+      <span class="k">KV cache in use</span>
+      <span class="v" id="kv-v">&mdash;</span>
+    </div>
+    <div class="meter"><i id="kv-bar" style="width:0%;background:var(--good)"></i></div>
+    <p class="meter-foot" id="kv-foot">
+      KV cache is the memory that holds live conversations. It is the resource that
+      runs out first, so it is the honest measure of how free the hardware is.
+    </p>
+  </div>
+</section>
+
+<!-- ----------------------------------------------------------- KPIs -->
+<h2 class="vh">Live figures</h2>
+<div class="grid kpis" id="kpis" style="margin-top:14px"></div>
+
+<!-- -------------------------------------------------------- toolbar -->
+<div class="toolbar">
+  <span class="lbl">Range</span>
+  <div class="group" id="ranges" role="group" aria-label="Time range"></div>
+  <div class="spacer"></div>
+  <button id="tableview" type="button" aria-pressed="false">Table view</button>
+</div>
+
+<h2 class="vh">History</h2>
+<div class="grid charts" id="charts"></div>
+
+<footer>
+  <p id="prov">History baked at build time; current figures polled live from the endpoint.</p>
+  <p>
+    Every number here comes from the <code>/metrics</code> collateral the
+    attestation shim already serves &mdash; aggregate counters and gauges only.
+    No prompts, completions, client identifiers, or request metadata are
+    visible to this page or to the host: the CVM terminates TLS inside the
+    enclave. Verify the enclave yourself with
+    <a href="https://github.com/tinfoilsh/tinfoil-go">tinfoil-go</a> against
+    <code>aptos-labs/confidential-glm-5-3-prod</code>.
+  </p>
+</footer>
+</div>
+
+<script>
+"use strict";
+
+// Baked by build_dashboard.py.
+//
+// `metricsUrl` is deliberately absent unless a build supplies it, and when it
+// is supplied it points at the metrics proxy, not the endpoint: a browser can
+// only fetch a URL written into this file, so whatever it names becomes public.
+// A build with no `--url` omits it and serves `snapshot` instead, and then
+// nothing here identifies where the numbers came from. Never reintroduce a
+// hard-coded fallback.
+const BAKED = {"generated":"2026-09-05T20:14:22Z","bucketSeconds":300,"sampleCount":2035,"series":{"t":[1788466200,1788466500,1788466800,1788467100,1788467400,1788467700,1788468000,1788468300,1788468600,1788468900,1788469200,1788469500,1788469800,1788470100,1788470400,1788470700,1788471000,1788471300,1788471600,1788471900,1788472200,1788472500,1788472800,1788473100,1788473400,1788473700,1788474000,1788474300,1788474600,1788474900,1788475200,1788475500,1788475800,1788476100,1788476400,1788476700,1788477000,1788477300,1788477600,1788477900,1788478200,1788478500,1788478800,1788479100,1788479400,1788479700,1788480000,1788480300,1788480600,1788480900,1788481200,1788481500,1788481800,1788482100,1788482400,1788482700,1788483000,1788483300,1788483600,1788483900,1788484200,1788484500,1788484800,1788485100,1788485400,1788485700,1788486000,1788486300,1788486600,1788486900,1788487200,1788487500,1788487800,1788488100,1788488400,1788488700,1788489000,1788489300,1788489600,1788489900,1788490200,1788490500,1788490800,1788491100,1788491400,1788491700,1788492000,1788492300,1788492600,1788492900,1788493200,1788493500,1788493800,1788494100,1788494400,1788494700,1788495000,1788495300,1788495600,1788495900,1788496200,1788496500,1788496800,1788497100,1788497400,1788497700,1788498000,1788498300,1788498600,1788498900,1788499200,1788499500,1788499800,1788500100,1788500400,1788500700,1788501000,1788501300,1788501600,1788501900,1788502200,1788502500,1788502800,1788503100,1788503400,1788503700,1788504000,1788504300,1788504600,1788504900,1788505200,1788505500,1788505800,1788506100,1788506400,1788506700,1788507000,1788507300,1788507600,1788507900,1788508200,1788508500,1788508800,1788509100,1788509400,1788509700,1788510000,1788510300,1788510600,1788510900,1788511200,1788511500,1788511800,1788512100,1788512400,1788512700,1788513000,1788513300,1788513600,1788513900,1788514200,1788514500,1788514800,1788515100,1788515400,1788515700,1788516000,1788516300,1788516600,1788516900,1788517200,1788517500,1788517800,1788518100,1788518400,1788518700,1788519000,1788519300,1788519600,1788519900,1788520200,1788520500,1788520800,1788521100,1788521400,1788521700,1788522000,1788522300,1788522600,1788522900,1788523200,1788523500,1788523800,1788524100,1788524400,1788524700,1788525000,1788525300,1788525600,1788525900,1788526200,1788526500,1788526800,1788527100,1788527400,1788527700,1788528000,1788528300,1788528600,1788528900,1788529200,1788529500,1788529800,1788530100,1788530400,1788530700,1788531000,1788531300,1788531600,1788531900,1788532200,1788532500,1788532800,1788533100,1788533400,1788533700,1788534000,1788534300,1788534600,1788534900,1788535200,1788535500,1788535800,1788536100,1788536400,1788536700,1788537000,1788537300,1788537600,1788537900,1788538200,1788538500,1788538800,1788539100,1788539400,1788539700,1788540000,1788540300,1788540600,1788540900,1788541200,1788541500,1788541800,1788542100,1788542400,1788542700,1788543000,1788543300,1788543600,1788543900,1788544200,1788544500,1788544800,1788545100,1788545400,1788545700,1788546000,1788546300,1788546600,1788546900,1788547200,1788547500,1788547800,1788548100,1788548400,1788548700,1788549000,1788549300,1788549600,1788549900,1788550200,1788550500,1788550800,1788551100,1788551400,1788551700,1788552000,1788552300,1788552600,1788552900,1788553200,1788553500,1788553800,1788554100,1788554400,1788554700,1788555000,1788555300,1788555600,1788555900,1788556200,1788556500,1788556800,1788557100,1788557400,1788557700,1788558000,1788558300,1788558600,1788558900,1788559200,1788559500,1788559800,1788560100,1788560400,1788560700,1788561000,1788561300,1788561600,1788561900,1788562200,1788562500,1788562800,1788563100,1788563400,1788563700,1788564000,1788564300,1788564600,1788564900,1788565200,1788565500,1788565800,1788566100,1788566400,1788566700,1788567000,1788567300,1788567600,1788567900,1788568200,1788568500,1788568800,1788569100,1788569400,1788569700,1788570000,1788570300,1788570600,1788570900,1788571200,1788571500,1788571800,1788572100,1788572400,1788572700,1788573000,1788573300,1788573600,1788573900,1788574200,1788574500,1788574800,1788575100,1788575400,1788575700,1788576000,1788576300,1788576600,1788576900,1788577200,1788577500,1788577800,1788578100,1788578400,1788578700,1788579000,1788579300,1788579600,1788579900,1788580200,1788580500,1788580800,1788581100,1788581400,1788581700,1788582000,1788582300,1788582600,1788582900,1788583200,1788583500,1788583800,1788584100,1788584400,1788584700,1788585000,1788585300,1788585600,1788585900,1788586200,1788586500,1788586800,1788587100,1788587400,1788587700,1788588000,1788588300,1788588600,1788588900,1788589200,1788589500,1788589800,1788590100,1788590400,1788590700,1788591000,1788591300,1788591600,1788591900,1788592200,1788592500,1788592800,1788593100,1788593400,1788593700,1788594000,1788594300,1788594600,1788594900,1788595200,1788595500,1788595800,1788596100,1788596400,1788596700,1788597000,1788597300,1788597600,1788597900,1788598200,1788598500,1788598800,1788599100,1788599400,1788599700,1788600000,1788600300,1788600600,1788600900,1788601200,1788601500,1788601800,1788602100,1788602400,1788602700,1788603000,1788603300,1788603600,1788603900,1788604200,1788604500,1788604800,1788605100,1788605400,1788605700,1788606000,1788606300,1788606600,1788606900,1788607200,1788607500,1788607800,1788608100,1788608400,1788608700,1788609000,1788609300,1788609600,1788609900,1788610200,1788610500,1788610800,1788611100,1788611400,1788611700,1788612000,1788612300,1788612600,1788612900,1788613200,1788613500,1788613800,1788614100,1788614400,1788614700,1788615000,1788615300,1788615600,1788615900,1788616200,1788616500,1788616800,1788617100,1788617400,1788617700,1788618000,1788618300,1788618600,1788618900,1788619200,1788619500,1788619800,1788620100,1788620400,1788620700,1788621000,1788621300,1788621600,1788621900,1788622200,1788622500,1788622800,1788623100,1788623400,1788623700,1788624000,1788624300,1788624600,1788624900,1788625200,1788625500,1788625800,1788626100,1788626400,1788626700,1788627000,1788627300,1788627600,1788627900,1788628200,1788628500,1788628800,1788629100,1788629400,1788629700,1788630000,1788630300,1788630600,1788630900,1788631200,1788631500,1788631800,1788632100,1788632400,1788632700,1788633000,1788633300,1788633600,1788633900,1788634200,1788634500,1788634800,1788635100,1788635400,1788635700,1788636000,1788636300,1788636600,1788636900,1788637200,1788637500,1788637800,1788638100,1788638400,1788638700,1788639000],"kv":[0.0628,0.0483,0.0218,0.0303,0.0737,0.106,0.1019,0.021,0.0898,0.0237,0.0244,0.0,0.0297,0.0606,0.0466,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1276,0.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.0163,0.0642,0.1358,0.0666,0.0992,0.0977,0.2205,0.1956,0.0611,0.0,0.031,0.0319,0.0975,0.1965,0.0645,0.1384,0.0758,0.0295,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0305,0.2252,0.1258,0.0467,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0083,0.0201],"kvMax":[0.0628,0.2372,0.1151,0.1837,0.1616,0.186,0.2078,0.2098,0.4522,0.2372,0.2443,0.0,0.2973,0.3046,0.2348,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.2661,0.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.1632,0.251,0.2507,0.2648,0.1812,0.2079,0.2734,0.5527,0.308,0.0,0.3097,0.3191,0.3287,0.6188,0.353,0.366,0.372,0.2954,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.3047,0.3352,0.3485,0.2405,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0827,0.0928],"run":[1.0,0.5,0.2,0.2,0.5,0.6,0.5,0.1,0.4,0.1,0.1,0.0,0.1,0.2,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.6,0.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.1,0.4,0.6,0.3,0.6,0.5,1.0,0.7,0.2,0.0,0.1,0.1,0.7,0.6,1.4,0.4,2.2,0.1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1,0.7,0.4,0.2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1,0.22],"runMax":[1.0,2.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,1.0,1.0,0.0,1.0,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,2.0,0.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,1.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,1.0,0.0,1.0,1.0,4.0,2.0,6.0,1.0,6.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0],"wait":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],"gtok":[null,46.26,31.93,22.38,41.72,35.12,66.32,15.68,39.37,12.4,10.79,0.3,2.73,14.86,12.71,0.0,0.0,0.0,0.47,0.0,0.0,0.0,0.0,0.0,0.51,49.29,0.96,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.03,0.92,37.3,55.67,29.76,49.59,38.5,99.15,80.83,13.6,0.39,2.49,11.45,33.15,38.57,100.82,28.37,156.08,16.14,0.5,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,7.48,51.29,35.83,19.82,0.64,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,8.35,27.85],"ptok":[null,5039.23,5038.76,4800.94,9345.51,6145.21,5351.03,4902.07,4620.47,2953.09,5807.06,14.87,1085.92,3730.55,1590.78,0.0,0.0,0.0,14.07,0.0,0.0,0.0,0.0,0.0,730.38,6800.96,558.45,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.06,950.77,9355.51,9675.42,7229.23,6089.08,8849.05,4749.59,11302.64,3539.96,18.44,2411.37,5508.52,9382.01,15810.94,5919.03,8504.06,5274.25,5405.76,19.1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1769.18,16939.84,6699.46,3642.03,39.5,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1471.59,1633.23],"e2e":[null,8.855,5.577,3.925,5.108,5.726,14.791,4.743,13.006,5.68,3.105,1.436,1.829,7.697,14.672,null,null,null,1.916,null,null,null,null,null,1.927,12.508,2.472,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,3.149,8.672,5.734,9.901,5.859,7.784,6.8,24.471,12.492,8.558,1.973,2.301,4.711,2.899,5.013,3.213,4.001,2.808,7.177,2.179,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,9.37,5.726,13.476,10.705,3.566,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,2.698,10.023],"e2e_p50":[null,3.75,2.917,3.438,4.028,3.929,10.0,3.958,11.25,1.333,3.125,0.75,1.0,6.25,12.5,null,null,null,1.0,null,null,null,null,null,2.0,5.0,1.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,2.5,7.5,4.5,6.875,3.75,7.321,4.25,17.5,8.214,7.5,1.0,1.75,5.5,0.95,4.25,3.004,2.25,2.312,7.5,1.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,10.0,5.833,12.5,6.875,2.5,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.417,3.75],"e2e_p90":[null,21.0,20.5,7.75,12.167,15.5,36.0,9.75,34.5,24.0,7.5,1.35,1.8,23.0,27.0,null,null,null,1.8,null,null,null,null,null,2.4,36.0,2.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,4.5,18.5,12.75,23.5,12.5,10.5,19.5,59.0,19.833,17.0,1.8,4.0,9.1,8.4,10.833,6.925,8.917,4.806,13.0,2.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,14.0,12.0,27.0,41.0,4.5,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,7.75,41.0],"ttft":[null,0.464,0.384,0.378,0.446,0.442,0.564,0.588,0.641,0.467,0.984,0.572,0.649,0.554,0.625,null,null,null,0.545,null,null,null,null,null,1.135,0.716,0.519,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,2.437,6.882,1.614,1.198,0.627,0.516,0.566,0.98,0.814,0.748,0.696,0.532,0.697,0.495,0.668,0.307,0.488,0.195,0.758,0.716,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.728,0.684,3.462,1.607,1.477,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.838,0.482],"ttft_p50":[null,0.469,0.443,0.346,0.438,0.375,0.547,0.525,0.625,0.25,0.625,0.375,0.75,0.375,0.625,null,null,null,0.375,null,null,null,null,null,0.75,0.65,0.375,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.25,5.0,0.614,0.658,0.602,0.567,0.602,0.906,0.625,0.562,0.375,0.375,0.375,0.375,0.646,0.176,0.562,0.178,0.8,0.375,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.562,0.506,0.917,0.75,1.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.35,0.333],"ttft_p90":[null,0.722,0.682,0.66,0.709,0.675,0.709,0.745,0.863,0.45,2.425,0.675,0.95,0.675,0.925,null,null,null,0.675,null,null,null,null,null,2.2,1.45,0.675,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,2.25,16.0,5.25,3.375,0.739,0.713,0.733,2.088,1.0,0.925,0.675,0.675,0.675,0.867,0.875,0.25,0.946,0.244,0.96,0.675,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.925,0.904,15.0,8.0,2.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.75,0.8],"itl":[null,0.033,0.0333,0.0323,0.0329,0.0328,0.033,0.0326,0.0344,0.0327,0.0325,0.032,0.0329,0.0328,0.0321,null,null,null,0.0319,null,null,null,null,null,0.0323,0.0327,0.0326,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.356,0.0325,0.0376,0.0327,0.0326,0.0325,0.0335,0.0326,0.0344,0.0326,0.0319,0.0328,0.0328,0.0382,0.034,0.0474,0.0331,0.0493,0.0367,0.0318,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0326,0.0326,0.0329,0.0326,0.0321,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0321,0.032],"itl_p50":[null,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,null,null,null,0.025,null,null,null,null,null,0.025,0.025,0.025,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.05,0.025,0.0251,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.0257,0.025,0.0266,0.025,0.0288,0.0251,0.025,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.025,0.025,0.025,0.025,0.025,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.025,0.025],"itl_p90":[null,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,0.045,null,null,null,0.045,null,null,null,null,null,0.045,0.045,0.045,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.7,0.045,0.0452,0.045,0.045,0.045,0.0451,0.045,0.0451,0.045,0.045,0.045,0.045,0.0462,0.0451,0.0479,0.0451,0.058,0.0452,0.045,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.045,0.045,0.045,0.045,0.045,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.045,0.045],"decode":[null,8.405,5.193,3.547,4.658,5.297,14.224,4.156,12.365,5.213,2.335,0.864,1.071,7.146,14.047,null,null,null,1.371,null,null,null,null,null,0.792,11.793,1.953,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.712,0.693,4.014,8.712,5.21,7.261,6.245,23.511,11.68,7.81,1.277,1.769,4.015,2.405,4.345,2.906,3.514,2.613,6.418,1.463,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,8.632,5.041,11.627,7.28,2.089,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.815,9.547],"decode_p50":[null,3.542,2.375,3.438,3.594,3.75,10.0,3.75,10.833,0.8,2.0,0.5,0.75,6.25,12.5,null,null,null,0.75,null,null,null,null,null,0.3,3.75,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.4,0.9,2.4,3.75,3.438,6.591,3.958,15.833,7.812,7.5,0.75,1.0,4.062,0.694,3.438,2.938,1.25,2.194,7.5,0.75,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,5.0,3.571,10.833,5.833,1.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.25,3.438],"decode_p90":[null,21.0,20.5,7.75,10.75,15.5,36.0,8.167,29.5,24.0,7.5,0.9,1.35,23.0,27.0,null,null,null,1.35,null,null,null,null,null,1.4,36.0,1.8,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.72,1.35,9.2,23.5,12.5,10.5,19.5,59.0,19.75,13.5,1.35,4.0,8.5,7.333,10.833,6.833,8.7,4.461,13.0,1.35,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,9.0,12.0,25.5,21.0,2.25,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,5.5,41.0],"slo10":[null,0.7368,0.8947,1.0,0.8519,0.8333,0.5,0.9091,0.4545,0.8333,1.0,1.0,1.0,0.7143,0.3333,null,null,null,1.0,null,null,null,null,null,1.0,0.6429,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,0.6667,0.8214,0.6087,0.8667,0.8947,0.8095,0.1818,0.619,0.6667,1.0,1.0,1.0,0.9348,0.88,0.986,0.9565,0.9962,0.75,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.5,0.8571,0.4444,0.7778,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,0.7778],"slo30":[null,0.9474,1.0,1.0,1.0,1.0,0.8571,1.0,0.8182,1.0,1.0,1.0,1.0,1.0,1.0,null,null,null,1.0,null,null,null,null,null,1.0,0.8571,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,1.0,1.0,0.9565,1.0,0.9474,1.0,0.7273,0.9048,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,1.0,1.0,0.8889,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,0.8889],"slo60":[null,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,null,null,null,1.0,null,null,null,null,null,1.0,1.0,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.9091,0.9524,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,1.0,1.0,1.0,1.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1.0,1.0],"queue":[null,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,null,null,null,0.0,null,null,null,null,null,0.0,0.0,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.0,0.0,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0],"reqs":[null,19.0,19.0,18.0,27.0,18.0,14.0,11.0,11.0,6.0,10.0,1.0,1.0,7.0,3.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,2.0,14.0,1.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,1.0,3.0,28.0,23.0,15.0,19.0,21.0,11.0,21.0,6.0,1.0,4.0,9.0,46.0,25.0,143.0,23.0,265.0,8.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,2.0,28.0,9.0,9.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,9.0,9.0],"preempt":[null,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,null,null,null,null,null,null,0.0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],"pfx":[null,0.9887,0.9927,0.994,0.9937,0.9954,0.9933,0.9943,0.9893,0.9988,0.9813,0.0286,0.9978,0.9987,0.9931,null,null,null,0.0303,null,null,null,null,null,0.9466,0.9881,0.9983,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.0,0.6635,0.9676,0.986,0.9926,0.9864,0.9913,0.9696,0.9898,0.9909,0.0231,0.9978,0.9958,0.9947,0.9958,0.9457,0.9946,0.9832,0.9956,0.0223,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.9932,0.995,0.9056,0.9384,0.0108,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,0.8916,0.975]},"totals":{"reqs":740.0,"ptok":45681668.0,"gtok":283138.0,"drafts":83964.0,"accepted":199391.0,"windowReqs":null,"windowPtok":null,"windowGtok":null,"windowPreempt":null,"firstTs":1788466481,"lastTs":1788639251,"windowPrefixHitRate":null},"engineRestarts":[1788476493],"metricsUrl":"https://capacity-metrics.confidential-glm.workers.dev","snapshot":"vllm:num_requests_running 0.0\nvllm:num_requests_waiting 0.0\nvllm:kv_cache_usage_perc 0.0\nvllm:request_success_total 740.0\nvllm:prompt_tokens_total 45681668.0\nvllm:generation_tokens_total 283138.0\nvllm:num_preemptions_total 0.0\nvllm:spec_decode_num_drafts_total 83964.0\nvllm:spec_decode_num_accepted_tokens_total 199391.0\nvllm:e2e_request_latency_seconds_sum 3561.0229477882385\nvllm:e2e_request_latency_seconds_count 740.0\nvllm:time_to_first_token_seconds_sum 410.4068920612335\nvllm:time_to_first_token_seconds_count 746.0\nvllm:prefix_cache_queries_total 45681668.0\nvllm:prefix_cache_hits_total 44745344.0\nvllm:e2e_request_latency_seconds_bucket{le=\"0.3\"} 2.0\nvllm:e2e_request_latency_seconds_bucket{le=\"0.5\"} 3.0\nvllm:e2e_request_latency_seconds_bucket{le=\"0.8\"} 37.0\nvllm:e2e_request_latency_seconds_bucket{le=\"1.0\"} 60.0\nvllm:e2e_request_latency_seconds_bucket{le=\"1.5\"} 107.0\nvllm:e2e_request_latency_seconds_bucket{le=\"2.0\"} 183.0\nvllm:e2e_request_latency_seconds_bucket{le=\"2.5\"} 361.0\nvllm:e2e_request_latency_seconds_bucket{le=\"5.0\"} 535.0\nvllm:e2e_request_latency_seconds_bucket{le=\"10.0\"} 672.0\nvllm:e2e_request_latency_seconds_bucket{le=\"15.0\"} 702.0\nvllm:e2e_request_latency_seconds_bucket{le=\"20.0\"} 717.0\nvllm:e2e_request_latency_seconds_bucket{le=\"30.0\"} 731.0\nvllm:e2e_request_latency_seconds_bucket{le=\"40.0\"} 734.0\nvllm:e2e_request_latency_seconds_bucket{le=\"50.0\"} 737.0\nvllm:e2e_request_latency_seconds_bucket{le=\"60.0\"} 738.0\nvllm:e2e_request_latency_seconds_bucket{le=\"120.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"240.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"480.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"960.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"1920.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"7680.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"+Inf\"} 740.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.001\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.005\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.01\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.02\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.04\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.06\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.08\"} 3.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.1\"} 24.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.25\"} 415.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.5\"} 470.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.75\"} 652.0\nvllm:time_to_first_token_seconds_bucket{le=\"1.0\"} 711.0\nvllm:time_to_first_token_seconds_bucket{le=\"2.5\"} 728.0\nvllm:time_to_first_token_seconds_bucket{le=\"5.0\"} 735.0\nvllm:time_to_first_token_seconds_bucket{le=\"7.5\"} 740.0\nvllm:time_to_first_token_seconds_bucket{le=\"10.0\"} 741.0\nvllm:time_to_first_token_seconds_bucket{le=\"20.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"40.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"80.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"160.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"640.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"2560.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"+Inf\"} 746.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.01\"} 0.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.025\"} 0.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.05\"} 81424.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.075\"} 82829.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.1\"} 82868.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.15\"} 83914.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.2\"} 83919.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.3\"} 83920.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.4\"} 83941.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.5\"} 83947.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.75\"} 83950.0\nvllm:inter_token_latency_seconds_bucket{le=\"1.0\"} 83950.0\nvllm:inter_token_latency_seconds_bucket{le=\"2.5\"} 83963.0\nvllm:inter_token_latency_seconds_bucket{le=\"5.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"7.5\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"10.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"20.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"40.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"80.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"+Inf\"} 83964.0\nvllm:request_decode_time_seconds_bucket{le=\"0.3\"} 6.0\nvllm:request_decode_time_seconds_bucket{le=\"0.5\"} 29.0\nvllm:request_decode_time_seconds_bucket{le=\"0.8\"} 84.0\nvllm:request_decode_time_seconds_bucket{le=\"1.0\"} 105.0\nvllm:request_decode_time_seconds_bucket{le=\"1.5\"} 166.0\nvllm:request_decode_time_seconds_bucket{le=\"2.0\"} 275.0\nvllm:request_decode_time_seconds_bucket{le=\"2.5\"} 398.0\nvllm:request_decode_time_seconds_bucket{le=\"5.0\"} 574.0\nvllm:request_decode_time_seconds_bucket{le=\"10.0\"} 681.0\nvllm:request_decode_time_seconds_bucket{le=\"15.0\"} 708.0\nvllm:request_decode_time_seconds_bucket{le=\"20.0\"} 722.0\nvllm:request_decode_time_seconds_bucket{le=\"30.0\"} 733.0\nvllm:request_decode_time_seconds_bucket{le=\"40.0\"} 735.0\nvllm:request_decode_time_seconds_bucket{le=\"50.0\"} 737.0\nvllm:request_decode_time_seconds_bucket{le=\"60.0\"} 738.0\nvllm:request_decode_time_seconds_bucket{le=\"120.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"240.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"480.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"960.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"1920.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"7680.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"+Inf\"} 740.0","snapshotAt":1788639251,"snapshotPrev":"vllm:num_requests_running 0.0\nvllm:num_requests_waiting 0.0\nvllm:kv_cache_usage_perc 0.0\nvllm:request_success_total 740.0\nvllm:prompt_tokens_total 45681668.0\nvllm:generation_tokens_total 283138.0\nvllm:num_preemptions_total 0.0\nvllm:spec_decode_num_drafts_total 83964.0\nvllm:spec_decode_num_accepted_tokens_total 199391.0\nvllm:e2e_request_latency_seconds_sum 3561.0229477882385\nvllm:e2e_request_latency_seconds_count 740.0\nvllm:time_to_first_token_seconds_sum 410.4068920612335\nvllm:time_to_first_token_seconds_count 746.0\nvllm:prefix_cache_queries_total 45681668.0\nvllm:prefix_cache_hits_total 44745344.0\nvllm:e2e_request_latency_seconds_bucket{le=\"0.3\"} 2.0\nvllm:e2e_request_latency_seconds_bucket{le=\"0.5\"} 3.0\nvllm:e2e_request_latency_seconds_bucket{le=\"0.8\"} 37.0\nvllm:e2e_request_latency_seconds_bucket{le=\"1.0\"} 60.0\nvllm:e2e_request_latency_seconds_bucket{le=\"1.5\"} 107.0\nvllm:e2e_request_latency_seconds_bucket{le=\"2.0\"} 183.0\nvllm:e2e_request_latency_seconds_bucket{le=\"2.5\"} 361.0\nvllm:e2e_request_latency_seconds_bucket{le=\"5.0\"} 535.0\nvllm:e2e_request_latency_seconds_bucket{le=\"10.0\"} 672.0\nvllm:e2e_request_latency_seconds_bucket{le=\"15.0\"} 702.0\nvllm:e2e_request_latency_seconds_bucket{le=\"20.0\"} 717.0\nvllm:e2e_request_latency_seconds_bucket{le=\"30.0\"} 731.0\nvllm:e2e_request_latency_seconds_bucket{le=\"40.0\"} 734.0\nvllm:e2e_request_latency_seconds_bucket{le=\"50.0\"} 737.0\nvllm:e2e_request_latency_seconds_bucket{le=\"60.0\"} 738.0\nvllm:e2e_request_latency_seconds_bucket{le=\"120.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"240.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"480.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"960.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"1920.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"7680.0\"} 740.0\nvllm:e2e_request_latency_seconds_bucket{le=\"+Inf\"} 740.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.001\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.005\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.01\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.02\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.04\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.06\"} 0.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.08\"} 3.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.1\"} 24.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.25\"} 415.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.5\"} 470.0\nvllm:time_to_first_token_seconds_bucket{le=\"0.75\"} 652.0\nvllm:time_to_first_token_seconds_bucket{le=\"1.0\"} 711.0\nvllm:time_to_first_token_seconds_bucket{le=\"2.5\"} 728.0\nvllm:time_to_first_token_seconds_bucket{le=\"5.0\"} 735.0\nvllm:time_to_first_token_seconds_bucket{le=\"7.5\"} 740.0\nvllm:time_to_first_token_seconds_bucket{le=\"10.0\"} 741.0\nvllm:time_to_first_token_seconds_bucket{le=\"20.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"40.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"80.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"160.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"640.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"2560.0\"} 746.0\nvllm:time_to_first_token_seconds_bucket{le=\"+Inf\"} 746.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.01\"} 0.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.025\"} 0.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.05\"} 81424.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.075\"} 82829.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.1\"} 82868.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.15\"} 83914.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.2\"} 83919.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.3\"} 83920.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.4\"} 83941.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.5\"} 83947.0\nvllm:inter_token_latency_seconds_bucket{le=\"0.75\"} 83950.0\nvllm:inter_token_latency_seconds_bucket{le=\"1.0\"} 83950.0\nvllm:inter_token_latency_seconds_bucket{le=\"2.5\"} 83963.0\nvllm:inter_token_latency_seconds_bucket{le=\"5.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"7.5\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"10.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"20.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"40.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"80.0\"} 83964.0\nvllm:inter_token_latency_seconds_bucket{le=\"+Inf\"} 83964.0\nvllm:request_decode_time_seconds_bucket{le=\"0.3\"} 6.0\nvllm:request_decode_time_seconds_bucket{le=\"0.5\"} 29.0\nvllm:request_decode_time_seconds_bucket{le=\"0.8\"} 84.0\nvllm:request_decode_time_seconds_bucket{le=\"1.0\"} 105.0\nvllm:request_decode_time_seconds_bucket{le=\"1.5\"} 166.0\nvllm:request_decode_time_seconds_bucket{le=\"2.0\"} 275.0\nvllm:request_decode_time_seconds_bucket{le=\"2.5\"} 398.0\nvllm:request_decode_time_seconds_bucket{le=\"5.0\"} 574.0\nvllm:request_decode_time_seconds_bucket{le=\"10.0\"} 681.0\nvllm:request_decode_time_seconds_bucket{le=\"15.0\"} 708.0\nvllm:request_decode_time_seconds_bucket{le=\"20.0\"} 722.0\nvllm:request_decode_time_seconds_bucket{le=\"30.0\"} 733.0\nvllm:request_decode_time_seconds_bucket{le=\"40.0\"} 735.0\nvllm:request_decode_time_seconds_bucket{le=\"50.0\"} 737.0\nvllm:request_decode_time_seconds_bucket{le=\"60.0\"} 738.0\nvllm:request_decode_time_seconds_bucket{le=\"120.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"240.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"480.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"960.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"1920.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"7680.0\"} 740.0\nvllm:request_decode_time_seconds_bucket{le=\"+Inf\"} 740.0","snapshotPrevAt":1788639220};
+const SEALED_METRICS_UNAVAILABLE = BAKED && BAKED.endpointStatus === "metrics_unavailable";
+
+const CFG = {
+  metricsUrl: (BAKED && BAKED.metricsUrl) || null,
+  historyUrl: null, // derived below — the ring lives at the proxy's root
+  pollMs: 15000,
+  historyMs: 60000,
+  bucketSeconds: (BAKED && BAKED.bucketSeconds) || 300,
+  sparkPoints: 12,
+};
+// Derived from the poll URL's *origin*, not its full path: a metricsUrl that
+// carries a path (…/metrics) must still land on the proxy's /history route,
+// which is only served at the root.
+if (CFG.metricsUrl) {
+  try {
+    CFG.historyUrl = new URL(CFG.metricsUrl).origin + "/history";
+  } catch {
+    CFG.historyUrl = null; // not a parseable absolute URL; run without history
+  }
+}
+// A single missed poll only dims the page; two in a row (~30s at the poll
+// cadence) is an outage, not a blip, and the pill must say so.
+const DOWN_AFTER_FAILS = 2;
+const EXPECTED_MODEL = "zai-org/GLM-5.3";
+
+// ------------------------------------------------------------ helpers
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+const observedModels = (metrics) => [...metrics.values()]
+  .flatMap((series) => series.map((entry) => entry.labels.model_name).filter(Boolean));
+const hasUnexpectedModel = (metrics) =>
+  observedModels(metrics).some((model) => model !== EXPECTED_MODEL);
+
+function compact(n, digits = 1) {
+  if (!isNum(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(digits) + "B";
+  if (abs >= 1e6) return (n / 1e6).toFixed(digits) + "M";
+  if (abs >= 1e3) return (n / 1e3).toFixed(digits) + "K";
+  if (abs >= 100) return n.toFixed(0);
+  if (abs >= 10) return n.toFixed(abs % 1 ? 1 : 0);
+  return n.toFixed(abs % 1 ? (abs < 1 ? 2 : 1) : 0);
+}
+const commas = (n) => (isNum(n) ? Math.round(n).toLocaleString() : "—");
+const pct = (v, d = 1) => (isNum(v) ? (v * 100).toFixed(d) + "%" : "—");
+
+function secs(v) {
+  if (!isNum(v)) return "—";
+  if (v < 1) return Math.round(v * 1000) + "ms";
+  if (v < 60) return v.toFixed(v < 10 ? 2 : 1) + "s";
+  return Math.floor(v / 60) + "m " + Math.round(v % 60) + "s";
+}
+
+// Axis ticks pick their unit from the top of the scale, not per value:
+// a column reading "2.5s, 2.0s, 1.5s, 1.0s, 500ms, 0ms" switches units
+// mid-axis and stops being comparable at a glance.
+function axisSecs(v, top) {
+  if (!isNum(v)) return "—";
+  if (!isNum(top) || top < 1) return Math.round(v * 1000) + "ms";
+  return v.toFixed(top < 10 ? 1 : 0) + "s";
+}
+
+const fmtTime = (epoch) =>
+  new Date(epoch * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const fmtDateTime = (epoch) =>
+  new Date(epoch * 1000).toLocaleString([], {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+
+// ------------------------------------------------- prometheus parsing
+
+const LINE_RE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+([-0-9.eE+]+)$/;
+const LABEL_RE = /([a-zA-Z_][a-zA-Z0-9_]*)="([^"]*)"/g;
+
+function parsePrometheus(text) {
+  const out = new Map();
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.charCodeAt(0) === 35) continue; // '#'
+    const m = LINE_RE.exec(line);
+    if (!m) continue;
+    const value = parseFloat(m[3]);
+    if (!Number.isFinite(value)) continue;
+    const labels = {};
+    if (m[2]) {
+      LABEL_RE.lastIndex = 0;
+      let lm;
+      while ((lm = LABEL_RE.exec(m[2])) !== null) labels[lm[1]] = lm[2];
+    }
+    if (!out.has(m[1])) out.set(m[1], []);
+    out.get(m[1]).push({ labels, value });
+  }
+  return out;
+}
+
+const sumOf = (m, name) => {
+  const e = m.get(name);
+  return e ? e.reduce((a, b) => a + b.value, 0) : null;
+};
+const gaugeOf = (m, name) => {
+  const e = m.get(name);
+  return e && e.length ? e[0].value : null;
+};
+
+function bucketsOf(m, base) {
+  const e = m.get(base + "_bucket");
+  if (!e) return [];
+  return e
+    .map((x) => ({ le: parseFloat(x.labels.le), n: x.value }))
+    .filter((x) => Number.isFinite(x.le))
+    .sort((a, b) => a.le - b.le);
+}
+
+// Approximate a quantile by linear interpolation inside the containing
+// bucket. Returning the bucket's upper edge (the naive approach) rounds a
+// 1.2s p50 up to vLLM's 2.5s boundary, which reads as a latency problem
+// that isn't there.
+function quantile(hist, q) {
+  if (!hist.length) return null;
+  const total = hist[hist.length - 1].n;
+  if (!(total > 0)) return null;
+  const target = q * total;
+  let prevEdge = 0, prevCount = 0;
+  for (const b of hist) {
+    if (b.n >= target) {
+      if (!Number.isFinite(b.le)) return prevEdge;
+      const span = b.n - prevCount;
+      if (span <= 0) return prevEdge;
+      return prevEdge + ((target - prevCount) / span) * (b.le - prevEdge);
+    }
+    prevEdge = Number.isFinite(b.le) ? b.le : prevEdge;
+    prevCount = b.n;
+  }
+  return prevEdge;
+}
+
+// ------------------------------------------------------------- state
+
+// Per-edge count delta between two cumulative histograms: the distribution
+// of whatever happened between the two readings. Percentiles come from this,
+// not from the cumulative counts (an all-time figure) or sum/count (a mean).
+function histDelta(cur, prev) {
+  if (!cur.length || !prev.length) return [];
+  const before = new Map(prev.map((b) => [b.le, b.n]));
+  return cur
+    .map((b) => ({ le: b.le, n: b.n - (before.get(b.le) ?? 0) }))
+    .filter((b) => b.n > 0);
+}
+
+// Fraction of a window's requests at or under `threshold` seconds — the
+// goodput behind an SLO. Cumulative counts bound it from below at the
+// largest edge not exceeding the threshold.
+function fractionUnder(hist, threshold) {
+  if (!hist.length) return null;
+  const total = hist[hist.length - 1].n;
+  if (!(total > 0)) return null;
+  let under = 0;
+  for (const b of hist) {
+    if (b.le <= threshold && b.n > under) under = b.n;
+  }
+  return under / total;
+}
+
+const EMPTY = { t: [], kv: [], kvMax: [], run: [], runMax: [], wait: [], gtok: [],
+                ptok: [], e2e: [], ttft: [], itl: [], queue: [], reqs: [], preempt: [],
+                e2e_p50: [], e2e_p90: [], ttft_p50: [], ttft_p90: [],
+                itl_p50: [], itl_p90: [], decode: [], decode_p50: [], decode_p90: [],
+                slo10: [], slo30: [], slo60: [], pfx: [] };
+const SERIES_KEYS = Object.keys(EMPTY).filter((k) => k !== "t");
+
+const state = {
+  series: BAKED && BAKED.series && BAKED.series.t.length
+    ? { ...structuredClone(EMPTY), ...structuredClone(BAKED.series) }
+    : structuredClone(EMPTY),
+  totals: (BAKED && BAKED.totals) || {},
+  rangeHours: 24,
+  tableView: false,
+  solo: {},        // chart title -> soloed series name (legend click)
+  live: null,      // latest parsed snapshot
+  prev: null,      // previous snapshot, for live rate deltas
+  baked: false,    // true while `live` is the build-time snapshot, not a poll
+  liveBucket: null,
+  kvCapacity: null,
+  maxConcurrency: null,
+  ok: null,
+  lastOkAt: null,
+  foreignModel: false, // the source answered, but not with GLM-5.3 metrics
+  failStreak: 0,    // consecutive failed polls; >= DOWN_AFTER_FAILS means down
+  lastFoldedAt: 0,  // ms; newest sample (poll or history) folded into series
+  histSince: 0,     // ms; history-owned watermark for the ?since= query
+  restarts: (BAKED && BAKED.engineRestarts) || [], // epoch s; engine restarts
+};
+
+// Captured before anything folds, so history replay can stay clear of the
+// buckets the builder has already aggregated from collector samples.
+const bakedLastBucket = state.series.t.length ? state.series.t[state.series.t.length - 1] : null;
+const bakedLastTs = (BAKED && BAKED.totals && BAKED.totals.lastTs) || null;
+// The history watermark starts at the bake; polls never advance it, so a
+// retry after a failed fetch still receives the whole unfilled tail.
+state.histSince = (bakedLastTs || 0) * 1000;
+
+const RANGES = [
+  { label: "1h", hours: 1 },
+  { label: "6h", hours: 6 },
+  { label: "24h", hours: 24 },
+  { label: "48h", hours: 48 },
+  { label: "All", hours: Infinity },
+];
+
+function windowed() {
+  const t = state.series.t;
+  if (!t.length) return { t: [], idx: [] };
+  const end = t[t.length - 1];
+  const from = state.rangeHours === Infinity ? -Infinity : end - state.rangeHours * 3600;
+  const idx = [];
+  for (let i = 0; i < t.length; i++) if (t[i] >= from) idx.push(i);
+  return { t: idx.map((i) => t[i]), idx };
+}
+const pick = (key, idx) => idx.map((i) => state.series[key][i]);
+
+// ------------------------------------------------------------- charts
+// A small SVG renderer. Line/area get a snapping crosshair; columns get a
+// per-bar hit target. Both mirror everything into a table view, so no value
+// is reachable only by hovering.
+
+const NS = "http://www.w3.org/2000/svg";
+const el = (name, attrs) => {
+  const node = document.createElementNS(NS, name);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  return node;
+};
+
+function niceTicks(min, max, count) {
+  if (!(max > min)) {
+    const base = max || 1;
+    return [0, base];
+  }
+  const raw = (max - min) / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = (norm >= 7.5 ? 10 : norm >= 3.5 ? 5 : norm >= 1.5 ? 2 : 1) * mag;
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-6; v += step) {
+    out.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+  }
+  return out;
+}
+
+function barPath(x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, Math.max(h, 0));
+  if (h <= 0.5) return `M${x},${y + h} L${x + w},${y + h}`;
+  return `M${x},${y + h} L${x},${y + rr} Q${x},${y} ${x + rr},${y}` +
+         ` L${x + w - rr},${y} Q${x + w},${y} ${x + w},${y + rr} L${x + w},${y + h} Z`;
+}
+
+const PAD = { t: 12, r: 16, b: 26, l: 46 };
+const H = 190;
+
+function drawChart(card, spec) {
+  const plot = card.querySelector(".plot");
+  plot.textContent = "";
+
+  // A soloed legend label redraws with only that series: the y-scale
+  // re-fits to it alone, and the table view follows the same filter.
+  // A stale solo (title kept, series renamed) falls back to all series.
+  const soloName = state.solo[spec.title];
+  if (soloName) {
+    const soloed = spec.series.filter((s) => s.name === soloName);
+    if (soloed.length) spec = { ...spec, series: soloed };
+    else delete state.solo[spec.title];
+  }
+
+  const hasData = spec.t.length > 0 &&
+    spec.series.some((s) => s.values.some(isNum));
+  if (!hasData) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = spec.emptyText || "No samples in this range yet.";
+    plot.appendChild(p);
+    return;
+  }
+
+  if (state.tableView) { drawTable(plot, spec); return; }
+
+  const W = Math.max(320, plot.clientWidth || 460);
+  const innerW = W - PAD.l - PAD.r;
+  const innerH = H - PAD.t - PAD.b;
+
+  // A stacked band is measured from the running total beneath it, so the scale,
+  // the fills and the hover dots all work off cumulative tops rather than the
+  // raw values. A bucket missing from any one series drops out of all of them:
+  // half a stack is not a smaller stack, it is a wrong one.
+  const stacked = spec.kind === "stack";
+  const tops = !stacked ? [] : spec.series.map((_, si) =>
+    spec.t.map((_, i) => {
+      let acc = 0;
+      for (let k = 0; k <= si; k++) {
+        const v = spec.series[k].values[i];
+        if (!isNum(v)) return null;
+        acc += v;
+      }
+      return acc;
+    })
+  );
+  const total = stacked ? tops[tops.length - 1] : null;
+
+  let lo = 0, hi = -Infinity;
+  for (const vals of stacked ? [total] : spec.series.map((s) => s.values)) {
+    for (const v of vals) if (isNum(v)) hi = Math.max(hi, v);
+  }
+  if (hi === -Infinity) hi = 1;
+  if (spec.maxOne) hi = Math.max(hi, 1);
+  if (hi === 0) hi = 1;
+  const ticks = niceTicks(lo, hi, 4);
+  const top = Math.max(hi, ticks[ticks.length - 1]);
+
+  const x = (i) => PAD.l + (spec.t.length === 1 ? innerW / 2 : (i / (spec.t.length - 1)) * innerW);
+  const y = (v) => PAD.t + innerH - (clamp(v, lo, top) / top) * innerH;
+
+  const svg = el("svg", {
+    viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+    "aria-label": spec.aria || spec.title,
+  });
+
+  // gridlines + y ticks (solid hairlines, one step off surface)
+  for (const tick of ticks) {
+    svg.appendChild(el("line", {
+      x1: PAD.l, x2: W - PAD.r, y1: y(tick), y2: y(tick),
+      stroke: "var(--grid)", "stroke-width": 1, "shape-rendering": "crispEdges",
+    }));
+    const label = el("text", {
+      x: PAD.l - 8, y: y(tick) + 3.5, "text-anchor": "end",
+      fill: "var(--text-muted)", "font-size": 10.5,
+      style: "font-variant-numeric:tabular-nums",
+    });
+    label.textContent = spec.yTick(tick, top);
+    svg.appendChild(label);
+  }
+
+  // baseline
+  svg.appendChild(el("line", {
+    x1: PAD.l, x2: W - PAD.r, y1: y(0), y2: y(0),
+    stroke: "var(--axis)", "stroke-width": 1, "shape-rendering": "crispEdges",
+  }));
+
+  if (stacked) {
+    // Runs come off the topmost band, whose nulls already include every lower
+    // one's, so all bands break at the same places and the stack never shears.
+    const runs = [];
+    let cur = [];
+    total.forEach((v, i) => {
+      if (isNum(v)) cur.push(i);
+      else if (cur.length) { runs.push(cur); cur = []; }
+    });
+    if (cur.length) runs.push(cur);
+    const pts = (run, vals) => run.map((i) => `${x(i)},${y(vals ? vals[i] : 0)}`).join(" L");
+
+    for (const run of runs) {
+      if (run.length < 2) continue;
+      const back = run.slice().reverse();
+      spec.series.forEach((s, si) => {
+        svg.appendChild(el("path", {
+          d: `M${pts(run, tops[si])} L${pts(back, si ? tops[si - 1] : null)} Z`,
+          fill: s.color, "fill-opacity": 0.85,
+        }));
+      });
+      // Separators last: an upper band's fill is drawn over the boundary it
+      // shares with the one below, so the 2px surface gap has to go on top of
+      // every fill or it gets painted out.
+      for (let si = 1; si < spec.series.length; si++) {
+        svg.appendChild(el("path", {
+          d: `M${pts(run, tops[si - 1])}`, fill: "none",
+          stroke: "var(--surface-1)", "stroke-width": 2, "stroke-linejoin": "round",
+        }));
+      }
+      svg.appendChild(el("path", {
+        d: `M${pts(run, total)}`, fill: "none",
+        stroke: spec.series[spec.series.length - 1].color, "stroke-width": 2,
+        "stroke-linejoin": "round", "stroke-linecap": "round",
+      }));
+    }
+
+    const tail = runs.length ? runs[runs.length - 1] : null;
+    if (tail && tail.length) {
+      const i = tail[tail.length - 1];
+      svg.appendChild(el("circle", {
+        cx: x(i), cy: y(total[i]), r: 4,
+        fill: spec.series[spec.series.length - 1].color,
+        stroke: "var(--surface-1)", "stroke-width": 2,
+      }));
+    }
+  } else if (spec.kind === "column") {
+    const slot = innerW / spec.t.length;
+    const bw = Math.min(24, Math.max(1, slot - 2)); // 2px surface gap
+    spec.series.forEach((s) => {
+      s.values.forEach((v, i) => {
+        if (!isNum(v) || v <= 0) return;
+        const bx = PAD.l + i * slot + (slot - bw) / 2;
+        const by = y(v);
+        svg.appendChild(el("path", {
+          d: barPath(bx, by, bw, y(0) - by, 4), fill: s.color,
+        }));
+      });
+    });
+  } else {
+    spec.series.forEach((s) => {
+      // split into runs of consecutive real points so gaps stay gaps
+      const runs = [];
+      let cur = [];
+      s.values.forEach((v, i) => {
+        if (isNum(v)) cur.push([x(i), y(v)]);
+        else if (cur.length) { runs.push(cur); cur = []; }
+      });
+      if (cur.length) runs.push(cur);
+
+      for (const run of runs) {
+        if (spec.kind === "area" && run.length > 1) {
+          const d = `M${run[0][0]},${y(0)} ` + run.map((p) => `L${p[0]},${p[1]}`).join(" ") +
+                    ` L${run[run.length - 1][0]},${y(0)} Z`;
+          svg.appendChild(el("path", { d, fill: s.color, "fill-opacity": 0.10 }));
+        }
+        if (run.length === 1) {
+          svg.appendChild(el("circle", { cx: run[0][0], cy: run[0][1], r: 2, fill: s.color }));
+        } else {
+          svg.appendChild(el("path", {
+            d: "M" + run.map((p) => `${p[0]},${p[1]}`).join(" L"),
+            fill: "none", stroke: s.color, "stroke-width": 2,
+            "stroke-linejoin": "round", "stroke-linecap": "round",
+          }));
+        }
+      }
+      // end marker: >=8px, with a 2px ring in the surface color
+      const last = runs.length ? runs[runs.length - 1][runs[runs.length - 1].length - 1] : null;
+      if (last) {
+        svg.appendChild(el("circle", {
+          cx: last[0], cy: last[1], r: 4, fill: s.color,
+          stroke: "var(--surface-1)", "stroke-width": 2,
+        }));
+      }
+    });
+  }
+
+  // x ticks — a clock alone is ambiguous once the range crosses a day
+  const spanHours = (spec.t[spec.t.length - 1] - spec.t[0]) / 3600;
+  const xfmt = spanHours > 26
+    ? (e) => new Date(e * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric" })
+    : fmtTime;
+  const tickCount = Math.min(5, spec.t.length);
+  for (let k = 0; k < tickCount; k++) {
+    const i = Math.round((k / Math.max(1, tickCount - 1)) * (spec.t.length - 1));
+    const label = el("text", {
+      x: clamp(x(i), PAD.l + 26, W - PAD.r - 26), y: H - 8, "text-anchor": "middle",
+      fill: "var(--text-muted)", "font-size": 10.5,
+      style: "font-variant-numeric:tabular-nums",
+    });
+    label.textContent = xfmt(spec.t[i]);
+    svg.appendChild(label);
+  }
+
+  // hover layer
+  const crosshair = el("line", {
+    y1: PAD.t, y2: PAD.t + innerH, stroke: "var(--axis)", "stroke-width": 1,
+    opacity: 0, "shape-rendering": "crispEdges",
+  });
+  svg.appendChild(crosshair);
+  const dots = spec.series.map((s) =>
+    el("circle", { r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2, opacity: 0 })
+  );
+  dots.forEach((d) => svg.appendChild(d));
+
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  plot.appendChild(tip);
+
+  const hit = el("rect", {
+    x: PAD.l, y: 0, width: innerW, height: H, fill: "transparent",
+    tabindex: 0, "aria-label": spec.title + " — arrow keys step through the series",
+  });
+  svg.appendChild(hit);
+
+  let focusIdx = -1;
+  const show = (i) => {
+    focusIdx = i;
+    const px = x(i);
+    crosshair.setAttribute("x1", px);
+    crosshair.setAttribute("x2", px);
+    crosshair.setAttribute("opacity", 1);
+
+    const when = document.createElement("div");
+    when.className = "when";
+    when.textContent = fmtDateTime(spec.t[i]);
+    tip.textContent = "";
+    tip.appendChild(when);
+
+    spec.series.forEach((s, si) => {
+      const v = s.values[i];
+      // The tooltip reads each band's own value, but the dot has to sit on the
+      // boundary the eye is following, which for a stack is the running top.
+      const at = stacked ? tops[si][i] : v;
+      if (isNum(v) && isNum(at)) {
+        dots[si].setAttribute("cx", px);
+        dots[si].setAttribute("cy", y(at));
+        dots[si].setAttribute("opacity", 1);
+      } else {
+        dots[si].setAttribute("opacity", 0);
+      }
+      const row = document.createElement("div");
+      row.className = "row";
+      const key = document.createElement("span");
+      key.className = "key";
+      key.style.background = s.color;
+      const name = document.createElement("span");
+      name.className = "n";
+      name.textContent = s.name;
+      const val = document.createElement("span");
+      val.className = "v";
+      val.textContent = isNum(v) ? spec.fmt(v) : "no data";
+      row.append(key, name, val);
+      tip.appendChild(row);
+    });
+
+    // The height of a stack is the number it is drawn to answer, and it is the
+    // one figure no single row states.
+    if (stacked && spec.series.length > 1) {
+      const row = document.createElement("div");
+      row.className = "row total";
+      const key = document.createElement("span");
+      key.className = "key";
+      const name = document.createElement("span");
+      name.className = "n";
+      name.textContent = "Total";
+      const val = document.createElement("span");
+      val.className = "v";
+      val.textContent = isNum(total[i]) ? spec.fmt(total[i]) : "no data";
+      row.append(key, name, val);
+      tip.appendChild(row);
+    }
+
+    tip.style.opacity = 1;
+    const tw = tip.offsetWidth || 150;
+    tip.style.left = clamp(px - tw / 2, 0, Math.max(0, W - tw)) + "px";
+    tip.style.top = "0px";
+  };
+  const hide = () => {
+    tip.style.opacity = 0;
+    crosshair.setAttribute("opacity", 0);
+    dots.forEach((d) => d.setAttribute("opacity", 0));
+  };
+
+  const idxFromEvent = (ev) => {
+    const box = svg.getBoundingClientRect();
+    const rel = ((ev.clientX - box.left) / box.width) * W;
+    const frac = (rel - PAD.l) / innerW;
+    return clamp(Math.round(frac * (spec.t.length - 1)), 0, spec.t.length - 1);
+  };
+  hit.addEventListener("pointermove", (ev) => show(idxFromEvent(ev)));
+  hit.addEventListener("pointerleave", hide);
+  hit.addEventListener("focus", () => show(focusIdx < 0 ? spec.t.length - 1 : focusIdx));
+  hit.addEventListener("blur", hide);
+  hit.addEventListener("keydown", (ev) => {
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    ev.preventDefault();
+    const next = clamp(focusIdx + (ev.key === "ArrowRight" ? 1 : -1), 0, spec.t.length - 1);
+    show(next);
+  });
+
+  plot.appendChild(svg);
+}
+
+function drawTable(plot, spec) {
+  const scroll = document.createElement("div");
+  scroll.className = "tv-scroll";
+  const table = document.createElement("table");
+  table.className = "tv";
+  // The table is the accessible equivalent of the chart, so it carries the same
+  // columns the tooltip does — including a stack's total.
+  const withTotal = spec.kind === "stack" && spec.series.length > 1;
+  const thead = document.createElement("thead");
+  const hrow = document.createElement("tr");
+  for (const h of ["Time", ...spec.series.map((s) => s.name), ...(withTotal ? ["Total"] : [])]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = h;
+    hrow.appendChild(th);
+  }
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  for (let i = spec.t.length - 1; i >= 0; i--) {
+    if (!spec.series.some((s) => isNum(s.values[i]))) continue;
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td");
+    td0.textContent = fmtDateTime(spec.t[i]);
+    tr.appendChild(td0);
+    for (const s of spec.series) {
+      const td = document.createElement("td");
+      td.textContent = isNum(s.values[i]) ? spec.fmt(s.values[i]) : "—";
+      tr.appendChild(td);
+    }
+    if (withTotal) {
+      const sum = spec.series.reduce(
+        (a, s) => (a === null || !isNum(s.values[i]) ? null : a + s.values[i]), 0);
+      const td = document.createElement("td");
+      td.textContent = isNum(sum) ? spec.fmt(sum) : "—";
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  scroll.appendChild(table);
+  plot.appendChild(scroll);
+}
+
+function chartCard(spec) {
+  const card = document.createElement("section");
+  card.className = "card";
+  const head = document.createElement("div");
+  head.className = "chart-head";
+  const left = document.createElement("div");
+  const h2 = document.createElement("h2");
+  h2.textContent = spec.title;
+  left.appendChild(h2);
+  if (spec.note) {
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = spec.note;
+    left.appendChild(note);
+  }
+  head.appendChild(left);
+  card.appendChild(head);
+  const plot = document.createElement("div");
+  plot.className = "plot";
+  card.appendChild(plot);
+  // A legend is always present for >=2 series; one series needs none.
+  // Clicking a label solos that series — only its line is drawn, the scale
+  // re-fits, and its siblings dim. Clicking the soloed label again (or a
+  // different one) clears or switches the solo.
+  if (spec.series.length >= 2) {
+    const legend = document.createElement("div");
+    legend.className = "legend";
+    const soloName = state.solo[spec.title];
+    for (const s of spec.series) {
+      const item = document.createElement("span");
+      item.className = "item";
+      if (soloName) item.classList.add(s.name === soloName ? "active" : "dimmed");
+      item.title = s.name === soloName ? "Show all series" : "Show only this series";
+      const key = document.createElement("span");
+      // Filled marks get a filled key; a 2px dash only reads as a line chart.
+      key.className = "key" + (spec.kind === "column" || spec.kind === "stack" ? " rect" : "");
+      key.style.background = s.color;
+      const name = document.createElement("span");
+      name.textContent = s.name;
+      item.append(key, name);
+      item.addEventListener("click", () => {
+        const cur = state.solo[spec.title];
+        if (cur === s.name) delete state.solo[spec.title];
+        else state.solo[spec.title] = s.name;
+        const now = state.solo[spec.title];
+        spec.series.forEach((ss, i) => {
+          const el = legend.children[i];
+          el.classList.toggle("active", !!now && ss.name === now);
+          el.classList.toggle("dimmed", !!now && ss.name !== now);
+        });
+        drawChart(card, spec);
+      });
+      legend.appendChild(item);
+    }
+    card.appendChild(legend);
+  }
+  return card;
+}
+
+// --------------------------------------------------------- definitions
+
+// Sum a series into coarser groups so a column chart never draws more bars
+// than it has pixels for. 24h of 5-minute buckets is 288 columns in ~400px.
+function rebucket(t, values, targetBars) {
+  if (t.length <= targetBars) return { t, values, group: 1 };
+  const group = Math.ceil(t.length / targetBars);
+  const outT = [], outV = [];
+  for (let i = 0; i < t.length; i += group) {
+    let sum = null;
+    for (let j = i; j < Math.min(i + group, t.length); j++) {
+      if (isNum(values[j])) sum = (sum ?? 0) + values[j];
+    }
+    outT.push(t[i]);
+    outV.push(sum);
+  }
+  return { t: outT, values: outV, group };
+}
+
+function historySpecs() {
+  const { t, idx } = windowed();
+  const capacity = isNum(state.kvCapacity) ? commas(state.kvCapacity) + "-token" : "";
+  const bars = rebucket(t, pick("reqs", idx), 48);
+  const barMins = Math.round((bars.group * CFG.bucketSeconds) / 60);
+
+  // Tokens per second integrate back into tokens: the collector stores a rate
+  // per bucket, and the builder has already dropped any pair spanning a restart
+  // or a collector outage, so a running sum counts observed work and invents
+  // none. That is also why a gap carries the total forward flat instead of
+  // interpolating across it — nothing was counted there, so nothing is added.
+  //
+  // It restarts at zero on every range change by design: the question is how
+  // much work the window holds, and the absolute counter cannot be recovered
+  // from deltas that deliberately skip restarts.
+  const accumulate = (key) => {
+    let acc = 0;
+    return pick(key, idx).map((v) => (isNum(v) ? (acc += v * CFG.bucketSeconds) : acc));
+  };
+  const cumPtok = accumulate("ptok");
+  const cumGtok = accumulate("gtok");
+  const cumPtokTotal = cumPtok.length ? cumPtok[cumPtok.length - 1] : null;
+  const cumGtokTotal = cumGtok.length ? cumGtok[cumGtok.length - 1] : null;
+  return [
+    {
+      title: "KV cache utilisation",
+      note: `Share of the ${capacity} cache in use — the capacity ceiling. Plotted against the full 100% so "free" is visible, not just relative.`,
+      kind: "area", maxOne: true, t,
+      yTick: (v) => Math.round(v * 100) + "%",
+      fmt: (v) => pct(v, 1),
+      series: [{ name: "KV cache used", color: "var(--series-1)", values: pick("kv", idx) }],
+    },
+    {
+      title: "Prefix cache hit rate",
+      note: "Share of prompt tokens served from cached KV instead of recomputed. A returning agent hits; a collapse under load means idle agents' cached contexts were evicted and had to be re-prefilled.",
+      kind: "line", maxOne: true, t,
+      yTick: (v) => Math.round(v * 100) + "%",
+      fmt: (v) => pct(v, 1),
+      series: [{ name: "Hit rate", color: "var(--series-1)", values: pick("pfx", idx) }],
+    },
+    {
+      title: "Preemptions",
+      note: "Requests the engine stopped mid-generation to reclaim KV cache, then re-queued to restart from a prefix hit. Zero is the norm; any bar means a request lost its cache mid-flight.",
+      kind: "column", t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, 0),
+      series: [{ name: "Preempted", color: "var(--series-2)", values: pick("preempt", idx) }],
+    },
+    {
+      title: "Concurrent requests",
+      note: "Requests in the batch, and any that had to queue behind it.",
+      kind: "line", t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, v % 1 ? 1 : 0),
+      series: [
+        { name: "Running", color: "var(--series-1)", values: pick("run", idx) },
+        { name: "Queued", color: "var(--series-2)", values: pick("wait", idx) },
+      ],
+    },
+    {
+      title: "Generation throughput",
+      note: "Output tokens per second — the work the GPUs are actually doing.",
+      kind: "area", t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, 1) + " tok/s",
+      series: [{ name: "Generation", color: "var(--series-1)", values: pick("gtok", idx) }],
+    },
+    {
+      title: "Prompt throughput",
+      note: "Input tokens per second, including prefix-cache hits. Plotted apart from generation because the scales differ by orders of magnitude.",
+      kind: "area", t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, 1) + " tok/s",
+      series: [{ name: "Prompt", color: "var(--series-1)", values: pick("ptok", idx) }],
+    },
+    {
+      // Paired because both are sub-second waiting time — the part a caller
+      // feels before anything appears. Plotting either against end-to-end
+      // would squash it flat.
+      title: "Waiting time",
+      note: "Time to first token (p50 and p90), and the share of it spent queued before the request even started. The p90 line rising with queue time is load, not model speed. The grey line is the mean, kept for continuity with the history before percentile recording began.",
+      kind: "line", t,
+      yTick: axisSecs,
+      fmt: secs,
+      series: [
+        { name: "Time to first token p50", color: "var(--series-1)", values: pick("ttft_p50", idx) },
+        { name: "Time to first token p90", color: "var(--series-2)", values: pick("ttft_p90", idx) },
+        { name: "Time to first token mean", color: "var(--series-3)", values: pick("ttft", idx) },
+        { name: "Queued before start", color: "var(--seq-2)", values: pick("queue", idx) },
+      ],
+    },
+    {
+      title: "Inter-token latency",
+      note: "p50 and p90 delay between generated tokens, from histogram bucket deltas — the pace of a streaming answer. Rises when decode batches grow or speculative-decoding acceptance drops; a widening p50-p90 gap means a subset of tokens is stalling, not the whole stream slowing. The grey line is the mean, kept for continuity with the history before percentile recording began.",
+      kind: "line", t,
+      yTick: axisSecs,
+      fmt: secs,
+      series: [
+        { name: "p50", color: "var(--series-1)", values: pick("itl_p50", idx) },
+        { name: "p90", color: "var(--series-2)", values: pick("itl_p90", idx) },
+        { name: "mean", color: "var(--series-3)", values: pick("itl", idx) },
+      ],
+    },
+    {
+      title: "Decode time",
+      note: "p50 and p90 time from first token to last — the duration of the generation phase. Separates long answers at normal pace from slow generation: TTFT plus this roughly reconstructs the end-to-end line. The grey line is the mean, kept for continuity with the history before percentile recording began.",
+      kind: "line", t,
+      yTick: axisSecs,
+      fmt: secs,
+      series: [
+        { name: "p50", color: "var(--series-1)", values: pick("decode_p50", idx) },
+        { name: "p90", color: "var(--series-2)", values: pick("decode_p90", idx) },
+        { name: "mean", color: "var(--series-3)", values: pick("decode", idx) },
+      ],
+    },
+    {
+      title: "Request latency, end to end",
+      note: "p50 and p90 per bucket, from histogram bucket deltas. The gap between the lines is the tail: a widening gap means a subset of requests is stalling (queueing, preemption, long-prompt prefill) — exactly what a mean smooths over. Interpolated from coarse histogram buckets, so values are approximations. The grey line is the mean, kept for continuity with the history before percentile recording began.",
+      kind: "line", t,
+      yTick: axisSecs,
+      fmt: secs,
+      series: [
+        { name: "p50", color: "var(--series-1)", values: pick("e2e_p50", idx) },
+        { name: "p90", color: "var(--series-2)", values: pick("e2e_p90", idx) },
+        { name: "mean", color: "var(--series-3)", values: pick("e2e", idx) },
+      ],
+    },
+    {
+      title: "Completed requests",
+      note: `Requests finishing per ${barMins}-minute bucket.`,
+      kind: "column", t: bars.t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, 0) + " req",
+      series: [{ name: "Requests", color: "var(--series-1)", values: bars.values }],
+    },
+    {
+      title: "Goodput (requests meeting SLO)",
+      note: "Share of requests whose end-to-end latency stayed within budget — under 10s, 30s, and 60s — from the same histogram deltas as the latency percentiles. A capacity incident shows here first as a dip: throughput can stay flat while the fraction of acceptable answers falls. History begins where percentile recording began.",
+      kind: "line", t,
+      yTick: (v) => Math.round(v * 100) + "%",
+      fmt: (v) => Math.round(v * 100) + "%",
+      series: [
+        { name: "under 10s", color: "var(--series-1)", values: pick("slo10", idx) },
+        { name: "under 30s", color: "var(--series-2)", values: pick("slo30", idx) },
+        { name: "under 60s", color: "var(--series-3)", values: pick("slo60", idx) },
+      ],
+    },
+    {
+      // The integral of the two rate charts above it. They say how fast
+      // at any moment; these say how much in total, and their flat
+      // stretches are the idle hours the rate charts show as a floor.
+      title: "Accumulated prompt tokens",
+      note: `Running total of input tokens over the window${isNum(cumPtokTotal) ? `, reaching ${compact(cumPtokTotal, 1)} tokens` : ""}. Flat means idle; the slope is prefill throughput.`,
+      kind: "area", t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, 1) + " tok",
+      series: [{ name: "Prompt", color: "var(--series-1)", values: cumPtok }],
+    },
+    {
+      title: "Accumulated generated tokens",
+      note: `Running total of output tokens over the window${isNum(cumGtokTotal) ? `, reaching ${compact(cumGtokTotal, 1)} tokens` : ""}. Split from prompt tokens — two orders of magnitude smaller, so its own scale keeps the slope readable instead of a thin band.`,
+      kind: "area", t,
+      yTick: (v) => compact(v, 0),
+      fmt: (v) => compact(v, 1) + " tok",
+      series: [{ name: "Generated", color: "var(--series-2)", values: cumGtok }],
+    },
+  ];
+}
+
+function effSpecs() {
+  const m = state.live;
+  const out = [];
+  if (m) {
+    const perPos = (m.get("vllm:spec_decode_num_accepted_tokens_per_pos_total") || [])
+      .map((e) => ({ pos: parseInt(e.labels.position, 10), v: e.value }))
+      .filter((e) => Number.isFinite(e.pos))
+      .sort((a, b) => a.pos - b.pos);
+    const drafts = sumOf(m, "vllm:spec_decode_num_drafts_total");
+    if (perPos.length && drafts) {
+      // Ordinal ramp over draft position (an ordered scale, so a ramp is the
+      // right encoding). Run it dark -> light so visual weight falls with the
+      // acceptance rate instead of fighting it.
+      const ramp = ["var(--seq-5)", "var(--seq-4)", "var(--seq-3)", "var(--seq-2)", "var(--seq-1)"];
+      out.push({
+        title: "Speculative decoding acceptance",
+        note: "Share of drafted tokens accepted at each position. Later positions are harder — the decay is why MTP yields ~2.5 tokens per step, not 5.",
+        kind: "column",
+        t: perPos.map((e) => e.pos),
+        xLabels: perPos.map((e) => "Position " + (e.pos + 1)),
+        yTick: (v) => Math.round(v * 100) + "%",
+        fmt: (v) => pct(v, 1),
+        maxOne: false,
+        series: [{
+          name: "Accepted", perColor: perPos.map((_, i) => ramp[Math.min(i, ramp.length - 1)]),
+          color: "var(--seq-3)", values: perPos.map((e) => e.v / drafts),
+        }],
+      });
+    }
+  }
+  return out;
+}
+
+// Ordinal columns are categorical on the x-axis, so they get their own
+// renderer: labelled slots instead of a time axis, per-bar hit targets.
+function drawOrdinalColumns(card, spec) {
+  const plot = card.querySelector(".plot");
+  plot.textContent = "";
+  if (state.tableView) {
+    const t = spec.t.map((_, i) => spec.xLabels[i]);
+    drawLabeledTable(plot, t, spec);
+    return;
+  }
+  const W = Math.max(320, plot.clientWidth || 460);
+  const innerW = W - PAD.l - PAD.r;
+  const innerH = H - PAD.t - PAD.b;
+  const values = spec.series[0].values;
+  const hi = Math.max(...values.filter(isNum), 0.0001);
+  const ticks = niceTicks(0, hi, 4);
+  const top = Math.max(hi, ticks[ticks.length - 1]);
+  const y = (v) => PAD.t + innerH - (clamp(v, 0, top) / top) * innerH;
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": spec.title });
+  for (const tick of ticks) {
+    svg.appendChild(el("line", {
+      x1: PAD.l, x2: W - PAD.r, y1: y(tick), y2: y(tick),
+      stroke: "var(--grid)", "stroke-width": 1, "shape-rendering": "crispEdges",
+    }));
+    const lb = el("text", {
+      x: PAD.l - 8, y: y(tick) + 3.5, "text-anchor": "end",
+      fill: "var(--text-muted)", "font-size": 10.5, style: "font-variant-numeric:tabular-nums",
+    });
+    lb.textContent = spec.yTick(tick, top);
+    svg.appendChild(lb);
+  }
+  svg.appendChild(el("line", {
+    x1: PAD.l, x2: W - PAD.r, y1: y(0), y2: y(0),
+    stroke: "var(--axis)", "stroke-width": 1, "shape-rendering": "crispEdges",
+  }));
+
+  const tip = document.createElement("div");
+  tip.className = "tip";
+  plot.appendChild(tip);
+
+  const slot = innerW / values.length;
+  const bw = Math.min(24, Math.max(2, slot - 12));
+  values.forEach((v, i) => {
+    const bx = PAD.l + i * slot + (slot - bw) / 2;
+    const by = y(v);
+    const color = spec.series[0].perColor ? spec.series[0].perColor[i] : spec.series[0].color;
+    svg.appendChild(el("path", { d: barPath(bx, by, bw, y(0) - by, 4), fill: color }));
+
+    const lb = el("text", {
+      x: bx + bw / 2, y: H - 8, "text-anchor": "middle",
+      fill: "var(--text-muted)", "font-size": 10.5,
+    });
+    lb.textContent = spec.xLabels[i];
+    svg.appendChild(lb);
+
+    // hit target spans the whole slot, never just the painted bar
+    const hit = el("rect", {
+      x: PAD.l + i * slot, y: PAD.t, width: slot, height: innerH,
+      fill: "transparent", tabindex: 0, role: "button",
+      "aria-label": `${spec.xLabels[i]}: ${spec.fmt(v)}`,
+    });
+    const show = () => {
+      tip.textContent = "";
+      const when = document.createElement("div");
+      when.className = "when";
+      when.textContent = spec.xLabels[i];
+      const row = document.createElement("div");
+      row.className = "row";
+      const key = document.createElement("span");
+      key.className = "key";
+      key.style.background = color;
+      const name = document.createElement("span");
+      name.className = "n";
+      name.textContent = spec.series[0].name;
+      const val = document.createElement("span");
+      val.className = "v";
+      val.textContent = spec.fmt(v);
+      row.append(key, name, val);
+      tip.append(when, row);
+      tip.style.opacity = 1;
+      const tw = tip.offsetWidth || 150;
+      tip.style.left = clamp(bx + bw / 2 - tw / 2, 0, Math.max(0, W - tw)) + "px";
+      tip.style.top = "0px";
+    };
+    const hide = () => { tip.style.opacity = 0; };
+    hit.addEventListener("pointerenter", show);
+    hit.addEventListener("pointerleave", hide);
+    hit.addEventListener("focus", show);
+    hit.addEventListener("blur", hide);
+    svg.appendChild(hit);
+  });
+  plot.appendChild(svg);
+}
+
+function drawLabeledTable(plot, labels, spec) {
+  const table = document.createElement("table");
+  table.className = "tv";
+  const thead = document.createElement("thead");
+  const hrow = document.createElement("tr");
+  for (const h of ["", spec.series[0].name]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = h;
+    hrow.appendChild(th);
+  }
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  labels.forEach((label, i) => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td");
+    td0.textContent = label;
+    const td1 = document.createElement("td");
+    td1.textContent = spec.fmt(spec.series[0].values[i]);
+    tr.append(td0, td1);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  plot.appendChild(table);
+}
+
+// ------------------------------------------------------- KPI + status
+
+function sparkline(values, accent) {
+  const pts = values.slice(-CFG.sparkPoints).filter(isNum);
+  if (pts.length < 2) return null;
+  const w = 120, h = 26;
+  const hi = Math.max(...pts), lo = Math.min(...pts);
+  const span = hi - lo || 1;
+  const svg = el("svg", { class: "spark", viewBox: `0 0 ${w} ${h}`, width: w, height: h, "aria-hidden": "true" });
+  const xy = pts.map((v, i) => [
+    (i / (pts.length - 1)) * (w - 4) + 2,
+    h - 3 - ((v - lo) / span) * (h - 6),
+  ]);
+  svg.appendChild(el("path", {
+    d: "M" + xy.map((p) => `${p[0]},${p[1]}`).join(" L"),
+    fill: "none", stroke: "var(--deemph)", "stroke-width": 2,
+    "stroke-linecap": "round", "stroke-linejoin": "round",
+  }));
+  const last = xy[xy.length - 1];
+  svg.appendChild(el("circle", {
+    cx: last[0], cy: last[1], r: 3, fill: accent,
+    stroke: "var(--surface-1)", "stroke-width": 2,
+  }));
+  return svg;
+}
+
+function tile({ label, value, unit, sub, spark }) {
+  const card = document.createElement("div");
+  card.className = "card tile";
+  const l = document.createElement("div");
+  l.className = "label";
+  l.textContent = label;
+  const v = document.createElement("div");
+  v.className = "value";
+  v.textContent = value;
+  if (unit) {
+    const u = document.createElement("span");
+    u.className = "unit";
+    u.textContent = unit;
+    v.appendChild(u);
+  }
+  card.append(l, v);
+  if (sub) {
+    const s = document.createElement("div");
+    s.className = "sub2";
+    s.textContent = sub;
+    card.appendChild(s);
+  }
+  if (spark) card.appendChild(spark);
+  return card;
+}
+
+function renderKpis() {
+  const host = document.getElementById("kpis");
+  host.textContent = "";
+  const m = state.live;
+  const { idx } = windowed();
+
+  const running = m ? gaugeOf(m, "vllm:num_requests_running") : null;
+  const waiting = m ? gaugeOf(m, "vllm:num_requests_waiting") : null;
+  const e2eHist = m ? bucketsOf(m, "vllm:e2e_request_latency_seconds") : [];
+  const ttftHist = m ? bucketsOf(m, "vllm:time_to_first_token_seconds") : [];
+
+  // Most recent bucket carrying a value, for tiles the current reading can't
+  // answer on its own.
+  const lastIn = (key) => {
+    const recent = pick(key, idx).filter(isNum);
+    return recent.length ? recent[recent.length - 1] : null;
+  };
+
+  // A live rate needs two polls. Until the second one lands, fall back to the
+  // most recent bucket that has a value rather than showing an empty tile.
+  let gtok = state.live && state.prev ? rateBetween("vllm:generation_tokens_total") : null;
+  let gtokLive = isNum(gtok);
+  if (!gtokLive) gtok = lastIn("gtok");
+
+  // Prefill is the larger half of the work here by two orders of magnitude, so
+  // generation throughput alone reads as a near-idle box while the GPUs are
+  // busy. Same fallback: a rate needs two polls, else the last recorded bucket.
+  let ptok = state.live && state.prev ? rateBetween("vllm:prompt_tokens_total") : null;
+  let ptokLive = isNum(ptok);
+  if (!ptokLive) ptok = lastIn("ptok");
+
+  // Percentiles from histogram buckets, windowed: the per-edge delta between
+  // the last two samples is that interval's request distribution. A quantile
+  // over the raw cumulative counts is an all-time figure dominated by history
+  // since process start; a mean hides the tail entirely.
+  const e2ePrev = state.prev
+    ? bucketsOf(state.prev.metrics, "vllm:e2e_request_latency_seconds") : [];
+  const ttftPrev = state.prev
+    ? bucketsOf(state.prev.metrics, "vllm:time_to_first_token_seconds") : [];
+  const e2eWin = histDelta(e2eHist, e2ePrev);
+  const ttftWin = histDelta(ttftHist, ttftPrev);
+  const latencyTile = (label, win, hist, key) => {
+    const p50 = quantile(win, 0.5);
+    if (isNum(p50)) {
+      return { label, value: secs(p50), sub: `p90 ${secs(quantile(win, 0.9))} · last interval` };
+    }
+    const allTime = quantile(hist, 0.5);
+    return isNum(allTime)
+      ? { label, value: secs(allTime), sub: `p90 ${secs(quantile(hist, 0.9))} · all-time` }
+      : { label, value: secs(lastIn(key)), sub: "mean, last recorded bucket" };
+  };
+
+  host.appendChild(tile({
+    label: "Requests running", value: isNum(running) ? String(running) : "—",
+    sub: isNum(waiting) ? (waiting > 0 ? `${waiting} queued` : "nothing queued") : undefined,
+    spark: sparkline(pick("run", idx), "var(--series-1)"),
+  }));
+  // Both throughput tiles carry the same provenance wording, so a viewer can
+  // tell at a glance whether they are reading a live rate or a baked one.
+  const rateSub = (live) =>
+    !live ? "last recorded bucket"
+      : state.baked ? "over the last sample interval" : "live, since last poll";
+
+  host.appendChild(tile({
+    label: "Generation throughput", value: compact(gtok, 0), unit: " tok/s",
+    sub: rateSub(gtokLive),
+    spark: sparkline(pick("gtok", idx), "var(--series-1)"),
+  }));
+  host.appendChild(tile({
+    label: "Prompt throughput", value: compact(ptok, 0), unit: " tok/s",
+    sub: rateSub(ptokLive),
+    spark: sparkline(pick("ptok", idx), "var(--series-1)"),
+  }));
+  host.appendChild(tile({
+    ...latencyTile("Time to first token", ttftWin, ttftHist, "ttft"),
+    spark: sparkline(pick("ttft_p50", idx), "var(--series-1)"),
+  }));
+  host.appendChild(tile({
+    ...latencyTile("Request latency", e2eWin, e2eHist, "e2e"),
+    spark: sparkline(pick("e2e_p50", idx), "var(--series-1)"),
+  }));
+
+  const q = m ? sumOf(m, "vllm:prefix_cache_queries_total") : null;
+  const hits = m ? sumOf(m, "vllm:prefix_cache_hits_total") : null;
+  host.appendChild(tile({
+    label: "Prefix cache hit rate",
+    value: isNum(q) && q > 0 ? pct(hits / q, 1) : "—",
+    sub: "cached prompt tokens, all-time",
+  }));
+
+  // What prefill actually cost after the cache. The hit-rate tile above says
+  // how well the cache works; this says what the GPUs still had to compute,
+  // which is the number that bounds headroom.
+  const computed = isNum(q) && isNum(hits) && q >= hits ? q - hits : null;
+  host.appendChild(tile({
+    label: "Prefill computed", value: compact(computed, 1), unit: " tok",
+    sub: isNum(hits) ? `${compact(hits, 0)} more came from cache` : undefined,
+  }));
+
+  const drafts = m ? sumOf(m, "vllm:spec_decode_num_drafts_total") : null;
+  const accepted = m ? sumOf(m, "vllm:spec_decode_num_accepted_tokens_total") : null;
+  host.appendChild(tile({
+    label: "Tokens per decode step",
+    value: isNum(drafts) && drafts > 0 ? (accepted / drafts).toFixed(2) : "—",
+    sub: "speculative decoding, of 5 drafted",
+  }));
+
+  const reqs = m ? sumOf(m, "vllm:request_success_total") : null;
+  host.appendChild(tile({
+    label: "Requests served", value: compact(reqs, 1),
+    sub: "since the engine started",
+  }));
+
+  const ptokTotal = m ? sumOf(m, "vllm:prompt_tokens_total") : null;
+  const gtokTotal = m ? sumOf(m, "vllm:generation_tokens_total") : null;
+  const bothTok = isNum(ptokTotal) && isNum(gtokTotal);
+  host.appendChild(tile({
+    label: "Tokens processed", value: compact(bothTok ? ptokTotal + gtokTotal : null, 1),
+    sub: bothTok ? `${compact(ptokTotal, 0)} in · ${compact(gtokTotal, 0)} out` : undefined,
+  }));
+
+  // Mean sizes, not a rate: this says what kind of work the endpoint is given
+  // rather than how much of it. Long prompts with short answers is the shape a
+  // high prefix-cache hit rate implies, so the two tiles corroborate.
+  const perReq = bothTok && isNum(reqs) && reqs > 0;
+  host.appendChild(tile({
+    label: "Tokens per request", value: compact(perReq ? ptokTotal / reqs : null, 0), unit: " in",
+    sub: perReq ? `${compact(gtokTotal / reqs, 0)} out · mean of ${compact(reqs, 1)}` : undefined,
+  }));
+
+  const preempt = m ? sumOf(m, "vllm:num_preemptions_total") : null;
+  host.appendChild(tile({
+    label: "Preemptions", value: isNum(preempt) ? commas(preempt) : "—",
+    sub: preempt === 0 ? "no request has been evicted" : "requests evicted under pressure",
+  }));
+}
+
+function rateBetween(name) {
+  if (!state.live || !state.prev) return null;
+  const a = sumOf(state.prev.metrics, name);
+  const b = sumOf(state.live, name);
+  const dt = (state.liveAt - state.prevAt) / 1000;
+  if (!isNum(a) || !isNum(b) || b < a || dt <= 0) return null;
+  return (b - a) / dt;
+}
+
+const STATUS = {
+  free:      { color: "var(--good)",     text: "Idle — the hardware is free" },
+  light:     { color: "var(--good)",     text: "Light load — capacity available" },
+  moderate:  { color: "var(--good)",     text: "Moderate load — capacity available" },
+  busy:      { color: "var(--warning)",  text: "Busy — still accepting work" },
+  queueing:  { color: "var(--serious)",  text: "Queueing — requests are waiting" },
+  saturated: { color: "var(--critical)", text: "Saturated — expect delays" },
+  thrashing: { color: "var(--critical)", text: "Cache thrashing — requests losing KV mid-flight" },
+  down:      { color: "var(--critical)", text: "Endpoint unreachable" },
+  wrongModel: { color: "var(--critical)", text: "GLM-5.3 unavailable" },
+};
+
+function renderStatus() {
+  const pill = document.getElementById("pill");
+  const pillText = document.getElementById("pill-text");
+  const hero = document.getElementById("hero");
+  const heroLabel = document.getElementById("hero-label");
+  const bar = document.getElementById("kv-bar");
+  const kvv = document.getElementById("kv-v");
+  const foot = document.getElementById("kv-foot");
+
+  if (SEALED_METRICS_UNAVAILABLE) {
+    pill.style.color = STATUS.wrongModel.color;
+    pillText.textContent = "GLM-5.3 metrics unavailable";
+    document.getElementById("ep-model").textContent = EXPECTED_MODEL;
+    hero.textContent = "—";
+    heroLabel.textContent = "no live reading";
+    kvv.textContent = "—";
+    bar.style.width = "0%";
+    foot.textContent = "No fresh GLM-5.3 metrics are available; capacity figures are withheld.";
+    return;
+  }
+
+  if (state.failStreak >= DOWN_AFTER_FAILS) {
+    pill.style.color = STATUS.down.color;
+    pillText.textContent = STATUS.down.text;
+    hero.textContent = "—";
+    heroLabel.textContent = "no live reading";
+    kvv.textContent = "—";
+    bar.style.width = "0%";
+    foot.textContent = "Live polling failed; capacity figures are withheld.";
+    return;
+  }
+
+  if (state.foreignModel || (state.live && hasUnexpectedModel(state.live))) {
+    pill.style.color = STATUS.wrongModel.color;
+    pillText.textContent = STATUS.wrongModel.text;
+    document.getElementById("ep-model").textContent = EXPECTED_MODEL;
+    hero.textContent = "—";
+    heroLabel.textContent = "no live reading";
+    kvv.textContent = "—";
+    bar.style.width = "0%";
+    foot.textContent = "The source is not reporting GLM-5.3 metrics; capacity figures are withheld.";
+    return;
+  }
+
+  if (!state.live) {
+    const s = state.ok === false ? STATUS.down : { color: "var(--text-muted)", text: "Connecting…" };
+    pill.style.color = s.color;
+    pillText.textContent = s.text;
+    if (state.ok === false) { hero.textContent = "—"; heroLabel.textContent = "no reading"; }
+    return;
+  }
+
+  const m = state.live;
+  const kv = gaugeOf(m, "vllm:kv_cache_usage_perc");
+  const waiting = gaugeOf(m, "vllm:num_requests_waiting") || 0;
+  const running = gaugeOf(m, "vllm:num_requests_running") || 0;
+
+  // Steps line up with the bar's own colour breaks, so the words never
+  // contradict the fill: "Light load" beside a half-full bar reads as a lie
+  // even when nothing is queued and there genuinely is room.
+  // Preemptions are the smoking gun of KV pressure: the engine stopped a
+  // running request mid-generation to reclaim cache. Any in the latest
+  // recorded bucket outranks every load adjective below.
+  const recentPreempt = (() => {
+    const v = state.series.preempt || [];
+    for (let i = v.length - 1; i >= 0; i--) if (isNum(v[i])) return v[i];
+    return null;
+  })();
+  let s;
+  // Sustained poll failure outranks every load adjective: the numbers below
+  // are the last good reading (the page is already dimmed), not a live
+  // capacity claim, so an idle-looking pill must not outlive the endpoint.
+  if (isNum(recentPreempt) && recentPreempt > 0) s = STATUS.thrashing;
+  else if (waiting > 0 && kv >= 0.9) s = STATUS.saturated;
+  else if (waiting > 0) s = STATUS.queueing;
+  else if (kv >= 0.75) s = STATUS.busy;
+  else if (kv >= 0.5) s = STATUS.moderate;
+  else if (running > 0) s = STATUS.light;
+  else s = STATUS.free;
+
+  pill.style.color = s.color;
+  pillText.textContent = s.text;
+
+  const free = isNum(kv) ? 1 - kv : null;
+  hero.textContent = isNum(free) ? Math.round(free * 100) + "%" : "—";
+  heroLabel.textContent = "KV cache free";
+  kvv.textContent = isNum(kv) ? pct(kv, 1) : "—";
+  bar.style.width = (isNum(kv) ? clamp(kv, 0, 1) * 100 : 0) + "%";
+  bar.style.background = kv >= 0.9 ? "var(--critical)" : kv >= 0.75 ? "var(--warning)" : "var(--good)";
+
+  // Cache capacity, the denominator under the headline. The proxy re-emits it
+  // as two bare numbers, since the series it comes from upstream carries model
+  // paths in its other labels and is withheld. A direct scrape still has that
+  // series, so both spellings are read.
+  const size = gaugeOf(m, "capacity:kv_cache_size_tokens");
+  const conc = gaugeOf(m, "capacity:kv_cache_max_concurrency");
+  if (isNum(size)) state.kvCapacity = size;
+  if (isNum(conc)) state.maxConcurrency = conc;
+  const info = m.get("vllm:cache_config_info");
+  if (info && info.length) {
+    const labels = info[0].labels;
+    state.kvCapacity = parseInt(labels.kv_cache_size_tokens, 10);
+    state.maxConcurrency = parseFloat(labels.kv_cache_max_concurrency);
+  }
+  if (isNum(state.kvCapacity)) {
+    const used = isNum(kv) ? Math.round(kv * state.kvCapacity) : null;
+    const holds = isNum(state.maxConcurrency)
+      ? `The cache holds about ${state.maxConcurrency.toFixed(1)} conversations at the full ` +
+        `262,144-token context, and far more at typical lengths — so this bar, `
+      : "So this bar, ";
+    foot.textContent =
+      `${commas(used)} of ${commas(state.kvCapacity)} cached tokens in use. ` +
+      `${holds}not the request count, is what tells you whether there is room.`;
+  }
+
+}
+
+// ------------------------------------------------------------- render
+
+let cards = [];
+
+function renderCharts() {
+  const host = document.getElementById("charts");
+  host.textContent = "";
+  const pending = [];
+  for (const spec of historySpecs()) {
+    const card = chartCard(spec);
+    host.appendChild(card);
+    pending.push([card, spec, drawChart]);
+  }
+  for (const spec of effSpecs()) {
+    const card = chartCard(spec);
+    host.appendChild(card);
+    pending.push([card, spec, drawOrdinalColumns]);
+  }
+  // Draw only once every card is in the grid. `auto-fit` columns reflow as
+  // siblings are appended, so a chart measured mid-build reads the width it
+  // had while it was briefly the only card — and renders at half scale.
+  cards = pending;
+  redrawAll();
+}
+
+function redrawAll() {
+  for (const [card, spec, draw] of cards) draw(card, spec);
+}
+
+function renderAll() {
+  renderStatus();
+  if (SEALED_METRICS_UNAVAILABLE || state.foreignModel || (state.live && hasUnexpectedModel(state.live))) {
+    document.getElementById("kpis").textContent = "";
+    document.getElementById("charts").textContent = "";
+    cards = [];
+    return;
+  }
+  renderKpis();
+  renderCharts();
+}
+
+// --------------------------------------------------------- live polling
+// Live samples extend the baked history into the current bucket, so the
+// charts keep moving while the page is open.
+
+function foldLive(metrics, at) {
+  const bucket = Math.floor(at / 1000 / CFG.bucketSeconds) * CFG.bucketSeconds;
+  const t = state.series.t;
+  const kv = gaugeOf(metrics, "vllm:kv_cache_usage_perc");
+  const run = gaugeOf(metrics, "vllm:num_requests_running");
+  const wait = gaugeOf(metrics, "vllm:num_requests_waiting");
+
+  if (!t.length || bucket > t[t.length - 1]) {
+    // fill any whole buckets we were not open for, so gaps stay gaps
+    if (t.length) {
+      for (let b = t[t.length - 1] + CFG.bucketSeconds; b < bucket; b += CFG.bucketSeconds) {
+        t.push(b);
+        for (const k of SERIES_KEYS) state.series[k].push(null);
+      }
+    }
+    t.push(bucket);
+    for (const k of SERIES_KEYS) state.series[k].push(null);
+  }
+  const i = t.length - 1;
+  const put = (k, v) => { if (isNum(v)) state.series[k][i] = v; };
+  put("kv", kv);
+  put("kvMax", Math.max(state.series.kvMax[i] ?? 0, kv ?? 0));
+  put("run", run);
+  put("runMax", Math.max(state.series.runMax[i] ?? 0, run ?? 0));
+  put("wait", wait);
+
+  // Compare against the snapshot from the *previous* poll. foldLive runs
+  // before state.live is overwritten, so state.live is still that snapshot.
+  //
+  // Not against a *baked* snapshot: the builder's series already covers the
+  // interval since the bake, and folding it again would smear that whole
+  // interval's average over the current bucket. The 10-minute cap is the same
+  // reasoning applied to a tab left in the background, which wakes up with a
+  // dt of hours; it mirrors the collector's own outage guard.
+  if (state.live && !state.baked) {
+    const dt = (at - state.liveAt) / 1000;
+    const delta = (name) => {
+      const a = sumOf(state.live, name), b = sumOf(metrics, name);
+      return isNum(a) && isNum(b) && b >= a ? b - a : null;
+    };
+    if (dt > 0 && dt <= 600) {
+      const g = delta("vllm:generation_tokens_total");
+      const p = delta("vllm:prompt_tokens_total");
+      if (isNum(g)) put("gtok", g / dt);
+      if (isNum(p)) put("ptok", p / dt);
+      const ec = delta("vllm:e2e_request_latency_seconds_count");
+      const es = delta("vllm:e2e_request_latency_seconds_sum");
+      if (isNum(ec) && ec > 0 && isNum(es)) put("e2e", es / ec);
+      const tc = delta("vllm:time_to_first_token_seconds_count");
+      const ts = delta("vllm:time_to_first_token_seconds_sum");
+      if (isNum(tc) && tc > 0 && isNum(ts)) put("ttft", ts / tc);
+      // Percentiles for the same interval, from the bucket deltas rather
+      // than sum/count: the mean hides the tail the p90 line exists to show.
+      const win = (base) => histDelta(bucketsOf(metrics, base), bucketsOf(state.live, base));
+      const e2eW = win("vllm:e2e_request_latency_seconds");
+      if (e2eW.length) { put("e2e_p50", quantile(e2eW, 0.5)); put("e2e_p90", quantile(e2eW, 0.9)); }
+      const ttftW = win("vllm:time_to_first_token_seconds");
+      if (ttftW.length) { put("ttft_p50", quantile(ttftW, 0.5)); put("ttft_p90", quantile(ttftW, 0.9)); }
+      const itlW = win("vllm:inter_token_latency_seconds");
+      if (itlW.length) { put("itl_p50", quantile(itlW, 0.5)); put("itl_p90", quantile(itlW, 0.9)); }
+      const dc = delta("vllm:request_decode_time_seconds_count");
+      const ds = delta("vllm:request_decode_time_seconds_sum");
+      if (isNum(dc) && dc > 0 && isNum(ds)) put("decode", ds / dc);
+      const decW = win("vllm:request_decode_time_seconds");
+      if (decW.length) { put("decode_p50", quantile(decW, 0.5)); put("decode_p90", quantile(decW, 0.9)); }
+      // Goodput from the same window: share of requests within each budget.
+      if (e2eW.length) {
+        const s10 = fractionUnder(e2eW, 10), s30 = fractionUnder(e2eW, 30), s60 = fractionUnder(e2eW, 60);
+        if (isNum(s10)) put("slo10", s10);
+        if (isNum(s30)) put("slo30", s30);
+        if (isNum(s60)) put("slo60", s60);
+      }
+      const r = delta("vllm:request_success_total");
+      if (isNum(r)) state.series.reqs[i] = (state.series.reqs[i] ?? 0) + r;
+    }
+  }
+}
+
+// One strictly-ordered stream of samples — live polls and history replays
+// alike — is what keeps counter deltas honest: a sample folds only if it is
+// newer than the last folded one, so an interval is never counted twice, and
+// a snapshot arriving late (older than a poll that already landed) is skipped
+// rather than folded backwards.
+function ingest(metrics, at) {
+  if (hasUnexpectedModel(metrics) || at <= state.lastFoldedAt) return false;
+  // A backwards request counter means the engine restarted (deploy or crash
+  // recovery). The pair's deltas are already skipped by the b >= a guard in
+  // foldLive; record *when* so provenance can explain the cliff.
+  if (state.live && !state.baked) {
+    const a = sumOf(state.live, "vllm:request_success_total");
+    const b = sumOf(metrics, "vllm:request_success_total");
+    if (isNum(a) && isNum(b) && b < a) state.restarts.push(Math.floor(at / 1000));
+  }
+  foldLive(metrics, at);
+  state.prev = state.live ? { metrics: state.live } : null;
+  state.prevAt = state.liveAt;
+  state.live = metrics;
+  state.liveAt = at;
+  state.baked = false;
+  state.lastFoldedAt = at;
+  return true;
+}
+
+async function poll() {
+  const wrap = document.querySelector(".wrap");
+  try {
+    const res = await fetch(CFG.metricsUrl, {
+      cache: "no-store",
+      mode: "cors",
+      signal: AbortSignal.timeout(CFG.pollMs),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const metrics = parsePrometheus(await res.text());
+    if (hasUnexpectedModel(metrics)) {
+      state.foreignModel = true;
+      state.ok = true;
+      state.failStreak = 0;
+      wrap.classList.add("stale");
+      renderAll();
+      return;
+    }
+    const at = Date.now();
+    ingest(metrics, at);
+    state.foreignModel = false;
+    state.ok = true;
+    state.lastOkAt = at;
+    state.failStreak = 0;
+    wrap.classList.remove("stale");
+    renderAll();
+  } catch (err) {
+    state.ok = false;
+    state.failStreak++;
+    // Hold the previous render at reduced opacity — no skeleton, no jump.
+    wrap.classList.add("stale");
+    renderStatus();
+  } finally {
+    updateProvenance();
+  }
+}
+
+async function pollLoop() {
+  const started = Date.now();
+  await poll();
+  const delay = Math.max(0, CFG.pollMs - (Date.now() - started));
+  setTimeout(pollLoop, delay);
+}
+
+// The proxy keeps a short rolling ring of its own readings. On load — and
+// once a minute afterwards — the page replays whatever the ring holds past
+// the baked history, so charts catch up without a reload and keep moving
+// between publishes. Snapshots join the same ordered stream as polls (see
+// ingest); ones inside the last baked bucket are skipped, because the
+// builder has already aggregated that bucket from collector samples.
+async function fetchHistory() {
+  if (!CFG.historyUrl) return false;
+  try {
+    const res = await fetch(
+      `${CFG.historyUrl}?since=${Math.floor(state.histSince / 1000)}`,
+      { cache: "no-store", mode: "cors", signal: AbortSignal.timeout(8000) },
+    );
+    if (!res.ok) return false;
+    const { snapshots } = JSON.parse(await res.text());
+    if (!Array.isArray(snapshots)) return false;
+    let folded = 0;
+    let newest = 0;
+    for (const s of snapshots) {
+      if (!s || !Number.isFinite(s.at)) continue;
+      if (s.at > newest) newest = s.at;
+      const bucket = Math.floor(s.at / CFG.bucketSeconds) * CFG.bucketSeconds;
+      if (bakedLastBucket !== null && bucket <= bakedLastBucket) continue;
+      if (ingest(parsePrometheus(s.body || ""), s.at * 1000)) folded++;
+    }
+    // Advance the watermark past everything received, folded or not: a
+    // snapshot skipped by ingest was skipped because a poll already covered
+    // its interval, so it will never be foldable again — asking for it anew
+    // every retry would just re-download it.
+    if (newest * 1000 > state.histSince) state.histSince = newest * 1000;
+    if (folded) renderAll();
+    return true;
+  } catch {
+    return false; // charts keep what they have; the next fetch retries
+  }
+}
+
+function updateProvenance() {
+  const p = document.getElementById("prov");
+  const bits = [];
+  if (BAKED && BAKED.generated) {
+    const span = state.totals.lastTs && state.totals.firstTs
+      ? ((state.totals.lastTs - state.totals.firstTs) / 3600).toFixed(0) + "h of"
+      : "";
+    bits.push(`History: ${span} collector samples, baked ${fmtDateTime(Date.parse(BAKED.generated) / 1000)}.`);
+  } else {
+    bits.push("No baked history — charts fill in from live polling while this page stays open.");
+  }
+  const bakedAt = BAKED && BAKED.totals && BAKED.totals.lastTs;
+  const asOf = `Figures are as of ${bakedAt ? fmtDateTime(bakedAt) : "the last collector sample"}`;
+  if (!CFG.metricsUrl) {
+    bits.push(`${asOf}. This page makes no network requests of its own.`);
+  } else if (state.ok === true && state.lastOkAt) {
+    bits.push(`Live figures updated ${fmtTime(Math.floor(state.lastOkAt / 1000))}, polling every ${CFG.pollMs / 1000}s.`);
+  } else if (state.ok === false) {
+    // Say which reading is on screen. "Last good reading" is ambiguous when the
+    // first poll is the one that failed and nothing live has ever landed.
+    bits.push(state.baked
+      ? `Live figures unavailable — ${asOf.replace("Figures are", "showing figures")}.`
+      : "Live poll failed — showing the last good reading.");
+  }
+  if (CFG.historyUrl) {
+    bits.push(`Charts catch up from the proxy's rolling history every ${CFG.historyMs / 1000}s.`);
+  }
+  if (state.restarts.length) {
+    bits.push(`Engine restarted ${fmtDateTime(state.restarts[state.restarts.length - 1])}; counters before that belong to the previous boot.`);
+  }
+  p.textContent = bits.join(" ");
+}
+
+// ---------------------------------------------------------------- init
+
+function initControls() {
+  const ranges = document.getElementById("ranges");
+  for (const r of RANGES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = r.label;
+    b.setAttribute("aria-pressed", String(r.hours === state.rangeHours));
+    b.addEventListener("click", () => {
+      state.rangeHours = r.hours;
+      for (const other of ranges.children) other.setAttribute("aria-pressed", "false");
+      b.setAttribute("aria-pressed", "true");
+      renderKpis();
+      renderCharts();
+    });
+    ranges.appendChild(b);
+  }
+
+  const tv = document.getElementById("tableview");
+  tv.addEventListener("click", () => {
+    state.tableView = !state.tableView;
+    tv.setAttribute("aria-pressed", String(state.tableView));
+    tv.textContent = state.tableView ? "Chart view" : "Table view";
+    renderCharts();
+  });
+
+  const theme = document.getElementById("theme");
+  const stored = localStorage.getItem("theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const syncLabel = () => {
+    const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+      (!document.documentElement.getAttribute("data-theme") &&
+        matchMedia("(prefers-color-scheme: dark)").matches);
+    theme.textContent = dark ? "Light" : "Dark";
+  };
+  syncLabel();
+  theme.addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+      (!document.documentElement.getAttribute("data-theme") &&
+        matchMedia("(prefers-color-scheme: dark)").matches);
+    const next = dark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    syncLabel();
+    renderCharts();
+  });
+
+  // Redraw on width change only. A ResizeObserver also catches the first
+  // post-layout pass, when fonts and grid columns have finally settled.
+  let resizeTimer = null;
+  let lastWidth = 0;
+  const observer = new ResizeObserver((entries) => {
+    const w = Math.round(entries[0].contentRect.width);
+    if (w === lastWidth) return;
+    lastWidth = w;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(redrawAll, 100);
+  });
+  observer.observe(document.getElementById("charts"));
+}
+
+// Every build ships its last reading as Prometheus text, so it flows through
+// exactly the code path a live poll would take. A sealed build has nothing but
+// this; a live build starts here and is overwritten by the first poll, which
+// means the tiles are populated on first paint and stay populated if the proxy
+// is unreachable, rather than collapsing to em-dashes over 48h of history.
+if (BAKED && BAKED.snapshot) {
+  state.live = parsePrometheus(BAKED.snapshot);
+  state.liveAt = (BAKED.snapshotAt || 0) * 1000;
+  state.baked = true;
+  if (BAKED.snapshotPrev) {
+    state.prev = { metrics: parsePrometheus(BAKED.snapshotPrev) };
+    state.prevAt = (BAKED.snapshotPrevAt || 0) * 1000;
+  }
+}
+
+initControls();
+renderAll();
+updateProvenance();
+// History first: replaying the proxy's ring brings the chart edge up to the
+// last snapshot, and the first poll then continues the same ordered stream
+// rather than leapfrogging it (a poll landing first would make every older
+// snapshot too late to fold).
+(async () => {
+  if (CFG.historyUrl) {
+    // History first — and if the first read fails, retry fast, twice, before
+    // any poll runs: once a poll lands, its timestamp becomes the fold
+    // watermark and older ring snapshots can no longer join the stream (their
+    // intervals would double-count). After these retries, settle into the
+    // slow cadence; a still-failing history just means charts run on polls
+    // alone, exactly as they did before the ring existed.
+    let ok = await fetchHistory();
+    for (const delay of [5000, 15000]) {
+      if (ok) break;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      ok = await fetchHistory();
+    }
+    setInterval(fetchHistory, CFG.historyMs);
+  }
+  if (CFG.metricsUrl) pollLoop();
+})();
+</script>
+</body>
+</html>
